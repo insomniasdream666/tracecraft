@@ -1,0 +1,12 @@
+node_modules/
+dist/
+src-tauri/target/
+*.log
+.DS_Store
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
