@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { writeFile } from "@tauri-apps/plugin-fs";
 import { ProjectSummary } from "../types/project";
 
 interface ProjectState {
@@ -17,6 +18,9 @@ interface ProjectState {
   exportGerber: (path: string) => Promise<void>;
   exportIpc2581: (path: string) => Promise<void>;
   exportBom: (path: string) => Promise<void>;
+  exportCpl: (path: string) => Promise<void>;
+  exportSchematicImage: (path: string) => Promise<void>;
+  exportSpiceNetlist: (path: string) => Promise<void>;
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
@@ -103,6 +107,35 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   exportBom: async (path: string) => {
     set({ loading: true, error: null });
     try { await invoke("export_bom", { path }); set({ loading: false }); }
+    catch (e) { set({ error: String(e), loading: false }); }
+  },
+
+  exportCpl: async (path: string) => {
+    set({ loading: true, error: null });
+    try { await invoke("export_cpl", { path }); set({ loading: false }); }
+    catch (e) { set({ error: String(e), loading: false }); }
+  },
+
+  exportSpiceNetlist: async (path: string) => {
+    set({ loading: true, error: null });
+    try { await invoke("export_spice_netlist", { path }); set({ loading: false }); }
+    catch (e) { set({ error: String(e), loading: false }); }
+  },
+
+  exportSchematicImage: async (path: string) => {
+    set({ loading: true, error: null });
+    try {
+      const { useUIStore } = await import("../stores/uiStore");
+      const canvasApi = useUIStore.getState().canvasApi;
+      if (!canvasApi || !("stageRef" in canvasApi)) { throw new Error("Canvas not ready"); }
+      const stage = (canvasApi as any).stageRef;
+      if (!stage) throw new Error("Stage not available");
+      const dataUrl = stage.toDataURL({ pixelRatio: 2 });
+      const base64 = dataUrl.replace(/^data:image\/png;base64,/, "");
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      await writeFile(path, bytes);
+      set({ loading: false });
+    }
     catch (e) { set({ error: String(e), loading: false }); }
   },
 }));

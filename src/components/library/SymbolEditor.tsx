@@ -46,6 +46,9 @@ export function SymbolEditor({
 
   const stageRef = useRef<any>(null);
 
+  const symbolRef = useRef(symbol);
+  symbolRef.current = symbol;
+
   const pushHistory = useCallback((s: SymbolDef) => {
     setHistory((h) => [...h.slice(-49), cloneSymbol(s)]);
     setFuture([]);
@@ -55,11 +58,11 @@ export function SymbolEditor({
     (updater: (prev: SymbolDef) => SymbolDef) => {
       setSymbol((prev) => {
         const next = updater(cloneSymbol(prev));
+        pushHistory(symbolRef.current);
         return next;
       });
-      pushHistory(symbol);
     },
-    [symbol, pushHistory]
+    [pushHistory]
   );
 
   const undo = useCallback(() => {
@@ -99,7 +102,10 @@ export function SymbolEditor({
         updateSymbol((prev) => {
           if (selectedId.startsWith("pin-")) {
             const idx = parseInt(selectedId.slice(4));
-            return { ...prev, pins: prev.pins.filter((_, i) => i !== idx) };
+            const pins = prev.pins.filter((_, i) => i !== idx);
+            const maxNum = pins.reduce((m, p) => Math.max(m, parseInt(p.number) || 0), 0);
+            setNextPinNumber(maxNum + 1);
+            return { ...prev, pins };
           }
           if (selectedId.startsWith("body-")) {
             const idx = parseInt(selectedId.slice(5));
@@ -350,6 +356,30 @@ export function SymbolEditor({
           </Group>
         );
       }
+      if (g.type === "Arc") {
+        return (
+          <Group key={id} id={id} draggable={drawMode === "select"}
+            onDragEnd={(e) => {
+              updateSymbol((prev) => {
+                const body = [...prev.body];
+                const old = body[i] as typeof g;
+                body[i] = { ...old, center: { x: e.target.x(), y: e.target.y() } };
+                return { ...prev, body };
+              });
+            }}
+            onClick={() => { setSelectedId(id); setShowPinPanel(false); }}
+          >
+            <Circle
+              x={g.center.x}
+              y={g.center.y}
+              radius={g.radius}
+              stroke={isSelected ? selColor : (g.stroke || "#E8E9F3")}
+              strokeWidth={isSelected ? 1.5 : 0.8}
+              dash={[4, 4]}
+            />
+          </Group>
+        );
+      }
       if (g.type === "Text") {
         return (
           <Group key={id} id={id} draggable={drawMode === "select"}
@@ -553,10 +583,7 @@ export function SymbolEditor({
           </button>
         )}
         <button
-          onClick={() => {
-            pushHistory(symbol);
-            onSave(symbol);
-          }}
+          onClick={() => onSave(symbol)}
           className="px-3 py-1 text-xs rounded bg-success text-white hover:opacity-90"
         >
           Save

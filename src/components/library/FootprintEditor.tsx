@@ -3,7 +3,6 @@ import { Stage, Layer, Rect, Circle, Line, Group, Text, Ellipse } from "react-ko
 import { KonvaEventObject } from "konva/lib/Node";
 import { FootprintDef, PadDef, PadShape } from "../../types/library";
 import { Point, snap } from "../../lib/geometry";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 interface FootprintEditorProps {
   componentId: string;
@@ -69,39 +68,95 @@ export function FootprintEditor({
   const [selectedOutlineIndex, setSelectedOutlineIndex] = useState<number | null>(null);
   const [selectedCourtyardIndex, setSelectedCourtyardIndex] = useState<number | null>(null);
   const [drawingPoints, setDrawingPoints] = useState<Point[]>([]);
-  const [modelPath, setModelPath] = useState<string | null>(null);
   const [nextPadNumber, setNextPadNumber] = useState(
     initial ? Math.max(0, ...initial.pads.map((p) => parseInt(p.number) || 0)) + 1 : 1
   );
+  const [history, setHistory] = useState<FootprintDef[]>([]);
+  const [future, setFuture] = useState<FootprintDef[]>([]);
 
   const stageRef = useRef<any>(null);
+  const footprintRef = useRef(footprint);
+  footprintRef.current = footprint;
+
+  const pushHistory = useCallback((fp: FootprintDef) => {
+    setHistory((h) => [...h.slice(-49), cloneFootprint(fp)]);
+    setFuture([]);
+  }, []);
 
   const updateFootprint = useCallback(
     (updater: (prev: FootprintDef) => FootprintDef) => {
-      setFootprint((prev) => updater(cloneFootprint(prev)));
+      setFootprint((prev) => {
+        pushHistory(footprintRef.current);
+        return updater(cloneFootprint(prev));
+      });
     },
-    []
+    [pushHistory]
   );
+
+  const undo = useCallback(() => {
+    if (history.length === 0) return;
+    const prev = history[history.length - 1];
+    setHistory((h) => h.slice(0, -1));
+    setFuture((f) => [cloneFootprint(footprint), ...f]);
+    setFootprint(prev);
+    setSelectedPadIndex(null);
+    setSelectedOutlineIndex(null);
+    setSelectedCourtyardIndex(null);
+  }, [history, footprint]);
+
+  const redo = useCallback(() => {
+    if (future.length === 0) return;
+    const next = future[0];
+    setFuture((f) => f.slice(1));
+    setHistory((h) => [...h, cloneFootprint(footprint)]);
+    setFootprint(next);
+    setSelectedPadIndex(null);
+    setSelectedOutlineIndex(null);
+    setSelectedCourtyardIndex(null);
+  }, [future, footprint]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "y") {
+        e.preventDefault();
+        redo();
+      }
       if (e.key === "Escape") {
         setSelectedPadIndex(null);
         setSelectedOutlineIndex(null);
         setSelectedCourtyardIndex(null);
         setDrawingPoints([]);
       }
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedPadIndex !== null) {
-        updateFootprint((prev) => ({
-          ...prev,
-          pads: prev.pads.filter((_, i) => i !== selectedPadIndex),
-        }));
-        setSelectedPadIndex(null);
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectedPadIndex !== null) {
+          updateFootprint((prev) => ({
+            ...prev,
+            pads: prev.pads.filter((_, i) => i !== selectedPadIndex),
+          }));
+          setSelectedPadIndex(null);
+        } else if (selectedOutlineIndex !== null) {
+          updateFootprint((prev) => ({
+            ...prev,
+            outline: prev.outline.filter((_, i) => i !== selectedOutlineIndex),
+          }));
+          setSelectedOutlineIndex(null);
+        } else if (selectedCourtyardIndex !== null) {
+          updateFootprint((prev) => ({
+            ...prev,
+            courtyard: prev.courtyard.filter((_, i) => i !== selectedCourtyardIndex),
+          }));
+          setSelectedCourtyardIndex(null);
+        }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [selectedPadIndex, updateFootprint]);
+  }, [selectedPadIndex, selectedOutlineIndex, selectedCourtyardIndex, updateFootprint, undo, redo]);
 
   const getPointerPos = (e: KonvaEventObject<MouseEvent | TouchEvent>): Point => {
     const stage = e.target.getStage();
@@ -205,18 +260,6 @@ export function FootprintEditor({
       pads[index] = { ...pads[index], ...updates };
       return { ...prev, pads };
     });
-  };
-
-  const handleModelPick = async () => {
-    try {
-      const file = await openDialog({
-        multiple: false,
-        filters: [{ name: "3D Models", extensions: ["step", "stp", "wrl"] }],
-      });
-      if (file) setModelPath(file);
-    } catch (e) {
-      console.error("Failed to pick 3D model:", e);
-    }
   };
 
   const renderGrid = () => {
@@ -527,6 +570,23 @@ export function FootprintEditor({
         >
           Courtyard
         </button>
+        <div className="w-px h-5 bg-border mx-1" />
+        <button
+          onClick={undo}
+          disabled={history.length === 0}
+          className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-secondary hover:text-text-primary disabled:opacity-30"
+          title="Undo (Ctrl+Z)"
+        >
+          ← Undo
+        </button>
+        <button
+          onClick={redo}
+          disabled={future.length === 0}
+          className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-secondary hover:text-text-primary disabled:opacity-30"
+          title="Redo (Ctrl+Shift+Z)"
+        >
+          Redo →
+        </button>
         <div className="flex-1" />
         <span className="text-xs text-text-muted mr-2">
           {footprint.pads.length} pads
@@ -680,28 +740,7 @@ export function FootprintEditor({
 
           {!selectedPad && (
             <div className="p-3 space-y-3">
-              <h4 className="text-xs font-semibold text-text-primary uppercase tracking-wider">Actions</h4>
-
-              <div className="space-y-1">
-                <label className="block text-[10px] text-text-muted">3D Model</label>
-                <div className="flex gap-1">
-                  <input
-                    type="text"
-                    readOnly
-                    value={modelPath || ""}
-                    placeholder="None selected"
-                    className="flex-1 bg-bg-deep border border-border rounded px-2 py-1 text-xs text-text-primary truncate"
-                  />
-                  <button
-                    onClick={handleModelPick}
-                    className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-secondary hover:text-text-primary border border-border"
-                  >
-                    Browse
-                  </button>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-border">
+              <div className="pt-2">
                 <button
                   onClick={() => {
                     const json = JSON.stringify(footprint, null, 2);

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback, useImperativeHandle, forwardRef } from "react";
+import React, { useRef, useEffect, useCallback, useImperativeHandle, forwardRef, useState } from "react";
 import { Stage, Layer, Line } from "react-konva";
 import { useUIStore } from "../../stores/uiStore";
 import { Point, Rect } from "../../lib/geometry";
@@ -37,6 +37,7 @@ export const KonvaCanvas = forwardRef<KonvaCanvasHandle, KonvaCanvasProps>(funct
   const { zoom, panOffset, setZoom, setPan } = useUIStore();
   const isPanning = useRef(false);
   const lastPointer = useRef({ x: 0, y: 0 });
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const screenToWorld = useCallback(
     (screenPos: Point): Point => {
@@ -56,10 +57,8 @@ export const KonvaCanvas = forwardRef<KonvaCanvasHandle, KonvaCanvasProps>(funct
     const stage = stageRef.current;
     if (!stage) return;
     const padding = 0.1;
-    const bx = bounds.width + bounds.x * padding * 2;
-    const by = bounds.height + bounds.y * padding * 2;
-    const scaleX = (width * (1 - padding)) / (bounds.width || 1);
-    const scaleY = (height * (1 - padding)) / (bounds.height || 1);
+    const scaleX = (width * (1 - 2 * padding)) / (bounds.width || 1);
+    const scaleY = (height * (1 - 2 * padding)) / (bounds.height || 1);
     const newScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(scaleX, scaleY)));
     const cx = bounds.x + bounds.width / 2;
     const cy = bounds.y + bounds.height / 2;
@@ -172,9 +171,19 @@ export const KonvaCanvas = forwardRef<KonvaCanvasHandle, KonvaCanvasProps>(funct
   useEffect(() => {
     const container = stageRef.current?.container();
     if (!container) return;
-    const handleDragOver = (e: DragEvent) => { e.preventDefault(); };
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      container.classList.add("drag-over");
+      setIsDragOver(true);
+    };
+    const handleDragLeave = () => {
+      container.classList.remove("drag-over");
+      setIsDragOver(false);
+    };
     const handleDrop = (e: DragEvent) => {
       e.preventDefault();
+      container.classList.remove("drag-over");
+      setIsDragOver(false);
       const rect = container.getBoundingClientRect();
       const worldPos = screenToWorld({ x: e.clientX - rect.left, y: e.clientY - rect.top });
       const componentId = e.dataTransfer?.getData("componentId");
@@ -183,9 +192,11 @@ export const KonvaCanvas = forwardRef<KonvaCanvasHandle, KonvaCanvasProps>(funct
       }
     };
     container.addEventListener("dragover", handleDragOver);
+    container.addEventListener("dragleave", handleDragLeave);
     container.addEventListener("drop", handleDrop);
     return () => {
       container.removeEventListener("dragover", handleDragOver);
+      container.removeEventListener("dragleave", handleDragLeave);
       container.removeEventListener("drop", handleDrop);
     };
   }, [onWorldDrop, screenToWorld]);
@@ -199,43 +210,62 @@ export const KonvaCanvas = forwardRef<KonvaCanvasHandle, KonvaCanvasProps>(funct
     const endY = height * 2;
     for (let x = startX; x < endX; x += gridSize) {
       gridLines.push(
-        <Line key={`gv${x}`} points={[x, startY, x, endY]} stroke="#2D2F52" strokeWidth={0.5} opacity={0.3} />
+        <Line key={`gv${x}`} points={[x, startY, x, endY]} stroke="#343760" strokeWidth={0.5} opacity={0.5} />
       );
     }
     for (let y = startY; y < endY; y += gridSize) {
       gridLines.push(
-        <Line key={`gh${y}`} points={[startX, y, endX, y]} stroke="#2D2F52" strokeWidth={0.5} opacity={0.3} />
+        <Line key={`gh${y}`} points={[startX, y, endX, y]} stroke="#343760" strokeWidth={0.5} opacity={0.5} />
       );
     }
   }
 
   return (
-    <Stage
-      ref={stageRef}
-      width={width}
-      height={height}
-      onWheel={handleWheel}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onDblClick={(e: any) => {
-        if (onWorldDblClick) {
-          const stage = stageRef.current;
-          if (stage) {
-            const pos = stage.getPointerPosition();
-            onWorldDblClick(screenToWorld({ x: pos.x, y: pos.y }), e);
+    <div className="relative" style={{ width, height }}>
+      <Stage
+        ref={stageRef}
+        width={width}
+        height={height}
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onDblClick={(e: any) => {
+          if (onWorldDblClick) {
+            const stage = stageRef.current;
+            if (stage) {
+              const pos = stage.getPointerPosition();
+              onWorldDblClick(screenToWorld({ x: pos.x, y: pos.y }), e);
+            }
           }
-        }
-      }}
-      draggable={false}
-      scaleX={zoom}
-      scaleY={zoom}
-      x={panOffset.x}
-      y={panOffset.y}
-      className="bg-bg-canvas"
-    >
-      {showGrid && <Layer listening={false}>{gridLines}</Layer>}
-      {children}
-    </Stage>
+        }}
+        draggable={false}
+        scaleX={zoom}
+        scaleY={zoom}
+        x={panOffset.x}
+        y={panOffset.y}
+        className="bg-bg-canvas"
+      >
+        {showGrid && <Layer listening={false}>{gridLines}</Layer>}
+        {children}
+      </Stage>
+      {isDragOver && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            border: "2px solid rgba(212, 120, 60, 0.5)",
+            backgroundColor: "rgba(212, 120, 60, 0.05)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10,
+          }}
+        >
+          <span style={{ color: "rgba(212, 120, 60, 0.8)", fontSize: "14px", fontWeight: 500 }}>
+            Drop component to place on board
+          </span>
+        </div>
+      )}
+    </div>
   );
 });

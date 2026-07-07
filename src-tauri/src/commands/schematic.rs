@@ -4,15 +4,12 @@ use crate::app_state::AppState;
 use crate::engine::erc::{run_erc, ERCViolation};
 use crate::model::schematic::*;
 use crate::model::id::*;
-use crate::undo::command::*;
 use crate::model::geometry::*;
-use crate::model::schematic::*;
 
 #[tauri::command]
-pub fn get_schematic(state: State<AppState>, _sheet_id: Option<SheetId>) -> Result<Option<SchematicSheet>, String> {
+pub fn get_schematic(state: State<AppState>, _sheet_id: Option<SheetId>) -> Result<SchematicSheet, String> {
     let schematics = state.schematics.read();
-    let sheet = schematics.values().next().cloned();
-    Ok(sheet)
+    schematics.values().next().cloned().ok_or_else(|| "No schematic sheet found".to_string())
 }
 
 #[tauri::command]

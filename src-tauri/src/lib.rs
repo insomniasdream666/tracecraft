@@ -18,16 +18,20 @@ pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "tracecraft=info".into()),
+                .unwrap_or_else(|_| "tracecraft=debug".into()),
         )
         .init();
 
     let db_path = dirs_or_default();
     std::fs::create_dir_all(&db_path).ok();
+    tracing::info!("TraceCraft starting, data dir: {}", db_path);
 
     let db_path = std::path::Path::new(&db_path).join("tracecraft.db");
     let conn = rusqlite::Connection::open(&db_path).expect("Failed to open database");
     migrations::run_migrations(&conn).expect("Failed to run migrations");
+    if let Err(e) = db::seed::seed_components(&conn) {
+        tracing::warn!("Failed to seed components: {}", e);
+    }
 
     let db_for_state = conn;
 
@@ -46,6 +50,7 @@ pub fn run() {
             commands::project::save_project,
             commands::project::open_project,
             commands::project::close_project,
+            commands::project::get_last_project,
             commands::schematic::get_schematic,
             commands::schematic::place_symbol,
             commands::schematic::draw_wire,
@@ -58,6 +63,8 @@ pub fn run() {
             commands::schematic::create_hierarchical_sheet,
             commands::schematic::move_elements,
             commands::pcb::get_board_state,
+            commands::pcb::get_board_properties,
+            commands::pcb::set_board_size,
             commands::pcb::place_footprint,
             commands::pcb::route_trace,
             commands::pcb::add_via,
@@ -68,6 +75,10 @@ pub fn run() {
             commands::pcb::delete_pcb_element,
             commands::pcb::draw_zone,
             commands::pcb::get_3d_model_data,
+            commands::pcb::create_diff_pair,
+            commands::pcb::list_diff_pairs,
+            commands::pcb::delete_diff_pair,
+            commands::pcb::route_diff_pair,
             commands::library::search_components,
             commands::library::get_components_model_3d,
             commands::library::get_component_detail,
@@ -101,6 +112,9 @@ pub fn run() {
             commands::project::export_gerber,
             commands::project::export_ipc2581,
             commands::project::export_bom,
+            commands::project::export_cpl,
+            commands::project::export_spice_netlist,
+            commands::library_download::download_kicad_libraries,
         ])
         .setup(|app| {
             let handle = app.handle();

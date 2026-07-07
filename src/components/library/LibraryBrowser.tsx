@@ -1,11 +1,22 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { Search, Upload, X, Folder, Edit3, Plus } from "lucide-react";
+import { Search, Upload, Download, X, Folder, Edit3, Plus } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { ComponentDetail } from "./ComponentDetail";
+import { CategoryTree } from "./CategoryTree";
 import { SymbolEditor } from "./SymbolEditor";
 import { FootprintEditor } from "./FootprintEditor";
 import { Component, SymbolDef, FootprintDef } from "../../types/library";
+import toast from "react-hot-toast";
+
+interface DownloadProgress {
+  phase: string;
+  current: number;
+  total: number;
+  message: string;
+}
 
 function LoadingSkeleton() {
   return (
@@ -29,11 +40,47 @@ export function LibraryBrowser() {
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [showNewComponent, setShowNewComponent] = useState(false);
+  const [newCompName, setNewCompName] = useState("");
+  const [newCompCat, setNewCompCat] = useState("");
 
   useEffect(() => {
     loadCategories();
     search("");
   }, []);
+
+  useEffect(() => {
+    const unlisten = listen<DownloadProgress>("kicad-download-progress", (e) => {
+      setDownloadProgress(e.payload);
+      if (e.payload.phase === "done") {
+        setDownloading(false);
+        toast.success(e.payload.message);
+        search(searchText);
+      } else if (e.payload.phase === "cancelled") {
+        setDownloading(false);
+        toast.error("Download cancelled");
+      }
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [search, searchText]);
+
+  const handleDownloadLibraries = async () => {
+    setDownloading(true);
+    setDownloadProgress({ phase: "start", current: 0, total: 1, message: "Starting download..." });
+    try {
+      const result = await invoke<string>("download_kicad_libraries");
+      toast.success(result);
+      setDownloading(false);
+      setDownloadProgress(null);
+      search(searchText);
+    } catch (e) {
+      toast.error(String(e));
+      setDownloading(false);
+      setDownloadProgress(null);
+    }
+  };
 
   useEffect(() => {
     itemRefs.current = itemRefs.current.slice(0, results.length);
@@ -118,6 +165,78 @@ export function LibraryBrowser() {
     setEditingFootprint(null);
   };
 
+  const handleCreateComponent = async () => {
+    if (!newCompName.trim()) { toast.error("Component name required"); return; }
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const id = await invoke<string>("create_component", {
+        name: newCompName.trim(),
+        description: "",
+        manufacturer: null,
+        category: newCompCat.trim() || null,
+      });
+      const comp = await invoke<Component | null>("get_component_detail", { id });
+      if (comp) {
+        setEditComponent(comp);
+        setShowNewComponent(false);
+        setShowSymbolEditor(true);
+        setNewCompName("");
+        setNewCompCat("");
+      }
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
+  if (showNewComponent) {
+    return (
+      <div className="flex flex-col h-full p-4 space-y-3">
+        <h3 className="text-xs font-semibold text-text-primary uppercase tracking-wider">New Component</h3>
+        <div className="space-y-2">
+          <label className="text-xs text-text-secondary">Name</label>
+          <input
+            autoFocus
+            value={newCompName}
+            onChange={(e) => setNewCompName(e.target.value)}
+            placeholder="e.g. NE555 Timer"
+            className="w-full px-2 py-1.5 rounded bg-bg-elevated border border-border text-text-primary text-xs outline-none focus:border-copper"
+            onKeyDown={(e) => e.key === "Enter" && handleCreateComponent()}
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-xs text-text-secondary">Category (optional)</label>
+          <select
+            value={newCompCat}
+            onChange={(e) => setNewCompCat(e.target.value)}
+            className="w-full px-2 py-1.5 rounded bg-bg-elevated border border-border text-text-primary text-xs outline-none focus:border-copper"
+          >
+            <option value="">None</option>
+            {categories
+              .filter((c, i, arr) => arr.findIndex((x) => x.name === c.name) === i && !c.parent_id)
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((c) => (
+                <option key={c.id} value={c.name}>{c.name}</option>
+              ))}
+          </select>
+        </div>
+        <div className="flex gap-2 pt-2">
+          <button
+            onClick={handleCreateComponent}
+            className="flex-1 px-3 py-1.5 rounded bg-copper text-white text-xs font-medium hover:bg-copper-dark transition-colors"
+          >
+            Create & Edit Symbol
+          </button>
+          <button
+            onClick={() => { setShowNewComponent(false); setNewCompName(""); setNewCompCat(""); }}
+            className="px-3 py-1.5 rounded bg-bg-surface text-text-secondary text-xs border border-border hover:text-text-primary transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (showSymbolEditor) {
     return (
       <div className="flex flex-col h-full">
@@ -163,20 +282,11 @@ export function LibraryBrowser() {
             <Folder size={12} />
             All Components
           </button>
-          {categories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setCategory(cat.name)}
-              className={`w-full flex items-center gap-1.5 text-left px-2 py-1 text-xs rounded transition-colors ${
-                selectedCategory === cat.name
-                  ? "bg-copper text-white"
-                  : "text-text-secondary hover:bg-bg-elevated hover:text-text-primary"
-              }`}
-            >
-              <Folder size={12} />
-              {cat.name}
-            </button>
-          ))}
+          <CategoryTree
+            categories={categories}
+            selected={selectedCategory}
+            onSelect={(name) => setCategory(name)}
+          />
         </div>
       </div>
       <div className="flex flex-col flex-1 min-w-0">
@@ -199,12 +309,31 @@ export function LibraryBrowser() {
             Import Library
           </button>
           <button
-            onClick={() => { setEditComponent(null); setShowSymbolEditor(true); }}
+            onClick={() => setShowNewComponent(true)}
             className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 bg-bg-elevated text-text-primary text-xs rounded border border-border hover:bg-bg-surface transition-colors"
           >
             <Plus size={14} />
-            New Symbol
+            New Component
           </button>
+          <button
+            onClick={handleDownloadLibraries}
+            disabled={downloading}
+            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 bg-bg-elevated text-text-primary text-xs rounded border border-border hover:bg-bg-surface disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            <Download size={14} />
+            {downloading ? "Downloading..." : "Download KiCad Libs"}
+          </button>
+          {downloading && downloadProgress && (
+            <div className="space-y-1">
+              <div className="h-1.5 bg-bg-deep rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-copper rounded-full transition-all duration-300"
+                  style={{ width: `${downloadProgress.total > 0 ? (downloadProgress.current / downloadProgress.total) * 100 : 0}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-text-muted text-center truncate">{downloadProgress.message}</p>
+            </div>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto p-2" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown}>
           {error && (

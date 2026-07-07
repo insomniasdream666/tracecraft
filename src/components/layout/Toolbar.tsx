@@ -23,7 +23,6 @@ import {
   Square,
 } from "lucide-react";
 import { ToolButton } from "../common/ToolButton";
-import { FileMenu } from "./FileMenu";
 import { useUIStore, ToolType, AppMode } from "../../stores/uiStore";
 import { usePCBStore } from "../../stores/pcbStore";
 import { useSchematicStore } from "../../stores/schematicStore";
@@ -49,9 +48,8 @@ export function Toolbar() {
   ];
 
   return (
-    <div className="h-12 bg-bg-surface border-b border-border flex items-center px-2 gap-1">
-      <FileMenu />
-      <div className="w-px h-6 bg-border mx-2" />
+    <div className="h-10 bg-bg-surface border-b border-border flex items-center px-2 gap-1">
+      <div className="w-px h-5 bg-border mx-1" />
       {modes.map((m) => (
         <ToolButton
           key={m.type}
@@ -150,7 +148,12 @@ export function Toolbar() {
           <ToolButton icon={<FileText size={18} />} label="Annotate" onClick={() => useSchematicStore.getState().annotate()} />
           <ToolButton icon={<AlertTriangle size={18} />} label="Run ERC" onClick={async () => {
             const violations = await useSchematicStore.getState().runERC();
-            alert(`${violations.length} violation(s) found`);
+            const { default: toast } = await import("react-hot-toast");
+            if (violations.length === 0) {
+              toast.success("No ERC violations — clean schematic!");
+            } else {
+              toast.error(`${violations.length} ERC violation(s) found`);
+            }
           }} />
         </>
       )}

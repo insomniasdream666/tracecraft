@@ -1,12 +1,13 @@
 import React, { useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Library, Box, Layers, Sparkles, PanelRightClose } from "lucide-react";
+import { Library, Box, Layers, Sparkles, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useUIStore } from "../../stores/uiStore";
 import { usePCBStore } from "../../stores/pcbStore";
 import { LibraryBrowser } from "../library/LibraryBrowser";
 import { PropertyPanel } from "../common/PropertyPanel";
 import { AIPanel } from "../ai/AIPanel";
 import { LayerPanel } from "../pcb/LayerPanel";
+import { BoardProperties } from "../pcb/BoardProperties";
 
 const tabs = [
   { id: "properties" as const, icon: <Box size={16} />, label: "Properties" },
@@ -136,23 +137,40 @@ export function Sidebar() {
 
   if (!sidebarOpen) {
     return (
-      <button
-        onClick={toggleSidebar}
-        className="w-8 bg-bg-surface border-l border-border flex items-center justify-center hover:bg-bg-elevated"
-      >
-        <PanelRightClose size={16} className="text-text-secondary" />
-      </button>
+      <div className="flex flex-col items-center w-8 bg-bg-surface border-l border-border py-1 gap-1">
+        <button
+          onClick={toggleSidebar}
+          title="Open sidebar"
+          className="w-6 h-6 flex items-center justify-center rounded text-text-secondary hover:text-text-primary hover:bg-bg-elevated transition-colors"
+        >
+          <PanelRightOpen size={14} />
+        </button>
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            title={tab.label}
+            onClick={() => { setSidebarTab(tab.id); toggleSidebar(); }}
+            className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${
+              sidebarTab === tab.id
+                ? "text-copper"
+                : "text-text-muted hover:text-text-secondary"
+            }`}
+          >
+            {tab.icon}
+          </button>
+        ))}
+      </div>
     );
   }
 
   return (
-    <div className="w-80 bg-bg-surface border-l border-border flex flex-col">
-      <div className="flex border-b border-border">
+    <div className="w-80 bg-bg-surface border-l border-border flex flex-col transition-all duration-200">
+      <div className="flex items-center border-b border-border pr-1">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setSidebarTab(tab.id)}
-            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors flex-1 justify-center
               ${sidebarTab === tab.id
                 ? "text-copper border-b-2 border-copper"
                 : "text-text-secondary hover:text-text-primary"
@@ -162,11 +180,20 @@ export function Sidebar() {
             {tab.label}
           </button>
         ))}
+        <button
+          onClick={toggleSidebar}
+          title="Close sidebar"
+          className="w-6 h-6 flex items-center justify-center rounded text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors ml-1"
+        >
+          <PanelRightClose size={14} />
+        </button>
       </div>
       <div className="flex-1 overflow-y-auto">
         {sidebarTab === "properties" && (
           selectedProps ? (
             <PropertyPanel title={selectedProps.title} properties={selectedProps.properties} />
+          ) : mode === "pcb" ? (
+            <BoardProperties />
           ) : (
             <PropertyPanel title="Properties" properties={[]} />
           )

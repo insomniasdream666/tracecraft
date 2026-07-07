@@ -2,6 +2,20 @@ use tauri::State;
 use crate::app_state::AppState;
 use crate::model::project::*;
 use crate::model::pcb::PcbBoard;
+use crate::model::schematic::SchematicSheet;
+use crate::model::id::SheetId;
+
+fn store_last_project(db: &rusqlite::Connection, path: &str) -> Result<(), String> {
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+        [],
+    ).map_err(|e| e.to_string())?;
+    db.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('last_project_path', ?1)",
+        rusqlite::params![path],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
 
 #[tauri::command]
 pub fn create_project(state: State<AppState>, name: String) -> Result<ProjectSummary, String> {
@@ -14,6 +28,16 @@ pub fn create_project(state: State<AppState>, name: String) -> Result<ProjectSum
         created_at: now.clone(),
         updated_at: now.clone(),
     };
+
+    let sheet = SchematicSheet {
+        id: SheetId(1),
+        name: "Sheet 1".to_string(),
+        ..Default::default()
+    };
+    let mut schematics = state.schematics.write();
+    schematics.insert(SheetId(1), sheet);
+    drop(schematics);
+
     *state.project.write() = Some(project);
     Ok(ProjectSummary {
         id,
@@ -25,23 +49,22 @@ pub fn create_project(state: State<AppState>, name: String) -> Result<ProjectSum
 
 #[tauri::command]
 pub fn open_project(state: State<AppState>, path: String) -> Result<ProjectSummary, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    let id = uuid::Uuid::new_v4();
-    let project = crate::db::project_store::load_project(&db, id)?
-        .unwrap_or_else(|| Project {
-            id,
-            name: path.split('/').last().unwrap_or("project").to_string(),
-            path: path.clone(),
-            created_at: chrono::Utc::now().to_rfc3339(),
-            updated_at: chrono::Utc::now().to_rfc3339(),
-        });
+    let (project, board, schematics) = crate::io::native::load(&path)?;
     let summary = ProjectSummary {
         id: project.id,
         name: project.name.clone(),
         path: project.path.clone(),
         updated_at: project.updated_at.clone(),
     };
+
     *state.project.write() = Some(project);
+    *state.board.write() = board;
+    state.schematics.write().extend(schematics);
+
+    if let Ok(db) = state.db.lock() {
+        let _ = store_last_project(&db, &path);
+    }
+
     Ok(summary)
 }
 
@@ -53,8 +76,27 @@ pub fn save_project(state: State<AppState>, path: String) -> Result<(), String> 
     crate::io::native::save(&project, &board, &schematics, &path)?;
     let db = state.db.lock().map_err(|e| e.to_string())?;
     crate::db::project_store::save_project(&db, &project)?;
+    store_last_project(&db, &path)?;
     *state.project.write() = Some(Project { path, ..project });
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_last_project(state: State<AppState>) -> Result<Option<String>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let path: Option<String> = db
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = 'last_project_path'",
+            [],
+            |row| row.get(0),
+        )
+        .ok();
+    drop(db);
+
+    match path {
+        Some(p) if std::path::Path::new(&p).exists() => Ok(Some(p)),
+        _ => Ok(None),
+    }
 }
 
 #[tauri::command]
@@ -113,5 +155,21 @@ pub fn export_ipc2581(state: State<AppState>, path: String) -> Result<(), String
 pub fn export_bom(state: State<AppState>, path: String) -> Result<(), String> {
     let board = state.board.read().clone();
     crate::io::bom::generate_bom(&board, &path)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn export_cpl(state: State<AppState>, path: String) -> Result<(), String> {
+    let board = state.board.read().clone();
+    crate::io::bom::generate_cpl(&board, &path)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn export_spice_netlist(state: State<AppState>, path: String) -> Result<(), String> {
+    let schematics = state.schematics.read();
+    let sheet = schematics.values().next().ok_or("No schematic open")?;
+    let params = std::collections::HashMap::new();
+    crate::io::spice::export_spice(sheet, &path, &params)?;
     Ok(())
 }

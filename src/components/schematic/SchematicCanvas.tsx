@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useCallback, useMemo } from "react";
 import { Layer, Circle, Line, Text, Group, Rect } from "react-konva";
+import { CircuitBoard } from "lucide-react";
 import { KonvaCanvas } from "../common/KonvaCanvas";
 import { useSchematicStore } from "../../stores/schematicStore";
 import { useUIStore } from "../../stores/uiStore";
@@ -318,8 +319,21 @@ export const SchematicCanvas = React.memo(function SchematicCanvas() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
+  const isEmpty = sheet && Object.keys(sheet.symbols).length === 0 && Object.keys(sheet.wires).length === 0;
+
   return (
     <div ref={containerRef} className="w-full h-full relative">
+      {isEmpty && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+          <div className="text-center pointer-events-auto">
+            <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-bg-surface border border-border flex items-center justify-center">
+              <CircuitBoard size={24} className="text-copper/60" />
+            </div>
+            <p className="text-sm text-text-muted">Empty schematic sheet</p>
+            <p className="text-xs text-text-muted/60 mt-1">Drag components from the Library tab to begin</p>
+          </div>
+        </div>
+      )}
       <div className="absolute top-2 left-2 z-10 flex gap-1">
         <button
           onClick={runERC}

@@ -11,6 +11,7 @@ pub struct PcbBoard {
     pub traces: Arena<Trace>,
     pub vias: Arena<Via>,
     pub zones: Arena<Zone>,
+    pub diff_pairs: Vec<DifferentialPair>,
     pub outline: Option<BoardOutline>,
     pub layers: LayerStack,
     pub design_rules: DesignRules,
@@ -24,12 +25,22 @@ impl Default for PcbBoard {
             traces: Arena::new(),
             vias: Arena::new(),
             zones: Arena::new(),
+            diff_pairs: vec![],
             outline: None,
             layers: LayerStack::default_2layer(),
             design_rules: DesignRules::default(),
             netlist: Netlist { nets: vec![] },
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DifferentialPair {
+    pub name: String,
+    pub p_net: NetId,
+    pub n_net: NetId,
+    pub width: f64,
+    pub gap: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

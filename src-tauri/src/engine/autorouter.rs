@@ -50,6 +50,7 @@ pub struct NewTrace {
 
 struct GridCell {
     blocked: bool,
+    #[allow(dead_code)]
     cost: f64,
 }
 
@@ -101,6 +102,7 @@ impl OccupancyGrid {
         (gx, gy)
     }
 
+    #[allow(dead_code)]
     fn grid_to_world(&self, gx: i64, gy: i64) -> Point {
         Point::new(
             gx as f64 * self.resolution + self.origin_x,

@@ -28,12 +28,22 @@ rust_xlsxwriter = "0.64"
 parking_lot = "0.12"
 async-trait = "0.1"
 
+ureq = "3"
+zip = "2"
+
 # AI inference deps (uncomment and add --features ai to enable):
 # ort = { version = "2", features = ["load-dynamic"] }
 # reqwest = { version = "0.12", features = ["json", "stream"] }
 
 [dev-dependencies]
 futures = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
 
 [features]
 default = ["custom-protocol"]

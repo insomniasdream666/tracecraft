@@ -276,10 +276,13 @@ pub fn route_trace(
     points: Vec<Point>,
 ) -> Result<TraceId, String> {
     let mut board = state.board.write();
-    let clearance = board.design_rules.min_clearance;
 
-    // Check for conflicts with existing traces on the same layer
-    let adjusted_points = resolve_conflicts(&points, width, clearance, &board, layer);
+    // Use the push-and-shove engine to resolve conflicts with existing traces
+    let adjusted_points = crate::engine::shove::resolve_conflicts(
+        &points, width, board.design_rules.min_clearance,
+        &mut board, layer, net_id,
+    );
+
     let trace = Trace {
         net_id,
         layer,
@@ -288,65 +291,6 @@ pub fn route_trace(
     };
     let id = TraceId(board.traces.insert(trace));
     Ok(id)
-}
-
-/// Simple obstacle avoidance: shift trace segments that conflict with existing traces.
-fn resolve_conflicts(
-    new_points: &[Point],
-    width: f64,
-    clearance: f64,
-    board: &PcbBoard,
-    layer: LayerId,
-) -> Vec<Point> {
-    if new_points.len() < 2 {
-        return new_points.to_vec();
-    }
-
-    for (_, existing) in board.traces.iter() {
-        if existing.layer != layer { continue; }
-        if existing.points.len() < 2 { continue; }
-
-        // Check each segment of the new trace against each segment of existing traces
-        for i in 0..new_points.len() - 1 {
-            let a1 = &new_points[i];
-            let a2 = &new_points[i + 1];
-            for j in 0..existing.points.len() - 1 {
-                let b1 = &existing.points[j];
-                let b2 = &existing.points[j + 1];
-                let min_dist = segment_min_distance(a1, a2, b1, b2);
-                if min_dist < (width + existing.width) / 2.0 + clearance {
-                    // Conflict! Try nudging the new trace point
-                    let mut adjusted = new_points.to_vec();
-                    if i + 1 < adjusted.len() {
-                        let dx = adjusted[i + 1].x - adjusted[i].x;
-                        let dy = adjusted[i + 1].y - adjusted[i].y;
-                        let len = (dx * dx + dy * dy).sqrt();
-                        if len > 1e-6 {
-                            let nx = -dy / len * (clearance + 0.1);
-                            let ny = dx / len * (clearance + 0.1);
-                            adjusted[i + 1].x += nx;
-                            adjusted[i + 1].y += ny;
-                        }
-                    }
-                    return adjusted;
-                }
-            }
-        }
-    }
-    new_points.to_vec()
-}
-
-fn segment_min_distance(a1: &Point, a2: &Point, b1: &Point, b2: &Point) -> f64 {
-    let points = [a1, a2, b1, b2];
-    let mut min_d = f64::MAX;
-    for i in 0..2 {
-        for j in 2..4 {
-            let d = points[i].distance(points[j]);
-            if d < min_d { min_d = d; }
-        }
-    }
-    // Also check distance from line segment endpoints to the other segment
-    min_d
 }
 
 #[tauri::command]
@@ -447,6 +391,137 @@ pub fn delete_pcb_element(
         _ => return Err(format!("Unknown PCB element type: {}", element_type)),
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BoardProperties {
+    pub has_outline: bool,
+    pub width: f64,
+    pub height: f64,
+    pub layer_count: usize,
+    pub layer_names: Vec<String>,
+}
+
+#[tauri::command]
+pub fn get_board_properties(state: State<AppState>) -> Result<BoardProperties, String> {
+    let board = state.board.read();
+    let (width, height) = match &board.outline {
+        Some(outline) if !outline.shape.is_empty() && outline.shape[0].len() >= 2 => {
+            let pts = &outline.shape[0];
+            let xs: Vec<f64> = pts.iter().map(|p| p.x).collect();
+            let ys: Vec<f64> = pts.iter().map(|p| p.y).collect();
+            let w = xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max) - xs.iter().cloned().fold(f64::INFINITY, f64::min);
+            let h = ys.iter().cloned().fold(f64::NEG_INFINITY, f64::max) - ys.iter().cloned().fold(f64::INFINITY, f64::min);
+            (w.abs(), h.abs())
+        }
+        _ => (100.0, 80.0),
+    };
+    Ok(BoardProperties {
+        has_outline: board.outline.is_some(),
+        width,
+        height,
+        layer_count: board.layers.layers.len(),
+        layer_names: board.layers.layers.iter().map(|l| l.name.clone()).collect(),
+    })
+}
+
+#[tauri::command]
+pub fn set_board_size(state: State<AppState>, width: f64, height: f64) -> Result<(), String> {
+    let mut board = state.board.write();
+    let half_w = width / 2.0;
+    let half_h = height / 2.0;
+    board.outline = Some(BoardOutline {
+        shape: vec![vec![
+            Point::new(-half_w, -half_h),
+            Point::new(half_w, -half_h),
+            Point::new(half_w, half_h),
+            Point::new(-half_w, half_h),
+            Point::new(-half_w, -half_h),
+        ]],
+        cutouts: vec![],
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn create_diff_pair(
+    state: State<AppState>,
+    name: String,
+    p_net: NetId,
+    n_net: NetId,
+    width: f64,
+    gap: f64,
+) -> Result<(), String> {
+    let mut board = state.board.write();
+    board.diff_pairs.push(DifferentialPair { name, p_net, n_net, width, gap });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn list_diff_pairs(state: State<AppState>) -> Result<Vec<DifferentialPair>, String> {
+    Ok(state.board.read().diff_pairs.clone())
+}
+
+#[tauri::command]
+pub fn delete_diff_pair(state: State<AppState>, index: usize) -> Result<(), String> {
+    let mut board = state.board.write();
+    if index < board.diff_pairs.len() {
+        board.diff_pairs.remove(index);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn route_diff_pair(
+    state: State<AppState>,
+    pair_index: usize,
+    layer: LayerId,
+    start_p: Point,
+    start_n: Point,
+    end_p: Point,
+    end_n: Point,
+) -> Result<Vec<TraceId>, String> {
+    let mut board = state.board.write();
+    let pair = board.diff_pairs.get(pair_index)
+        .ok_or_else(|| "Differential pair not found".to_string())?
+        .clone();
+
+    let gap = pair.gap;
+    let width = pair.width;
+
+    // Route both traces in parallel by taking the midpoint path and offsetting
+    let mid_points = vec![
+        Point::new((start_p.x + start_n.x) / 2.0, (start_p.y + start_n.y) / 2.0),
+        Point::new((end_p.x + end_n.x) / 2.0, (end_p.y + end_n.y) / 2.0),
+    ];
+
+    let dx = mid_points[1].x - mid_points[0].x;
+    let dy = mid_points[1].y - mid_points[0].y;
+    let len = (dx * dx + dy * dy).sqrt();
+    let (nx, ny) = if len > 1e-6 { (-dy / len * gap / 2.0, dx / len * gap / 2.0) } else { (0.0, 0.0) };
+
+    let p_trace = Trace {
+        net_id: Some(pair.p_net),
+        layer,
+        width,
+        points: vec![
+            Point::new(mid_points[0].x + nx, mid_points[0].y + ny),
+            Point::new(mid_points[1].x + nx, mid_points[1].y + ny),
+        ],
+    };
+    let n_trace = Trace {
+        net_id: Some(pair.n_net),
+        layer,
+        width,
+        points: vec![
+            Point::new(mid_points[0].x - nx, mid_points[0].y - ny),
+            Point::new(mid_points[1].x - nx, mid_points[1].y - ny),
+        ],
+    };
+
+    let p_id = TraceId(board.traces.insert(p_trace));
+    let n_id = TraceId(board.traces.insert(n_trace));
+    Ok(vec![p_id, n_id])
 }
 
 #[tauri::command]
