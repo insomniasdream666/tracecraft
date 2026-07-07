@@ -1,7 +1,5 @@
 use crate::model::pcb::{LayerStack, ImpedanceResult};
 
-const COPPER_RESISTIVITY: f64 = 1.68e-8; // ohm·m
-
 /// Calculate microstrip trace impedance and required width for a target impedance.
 /// Uses the IPC-2141A microstrip formula.
 pub fn microstrip_impedance(
@@ -37,7 +35,7 @@ pub fn differential_impedance(
     single_ended_z: f64,
     gap_mm: f64,
     height_mm: f64,
-    er: f64,
+    _er: f64,
 ) -> f64 {
     // Zdiff ≈ 2 * Z0 * (1 - 0.48 * exp(-0.96 * S / H))
     let s_over_h = (gap_mm / height_mm.max(0.01)).max(0.01);
@@ -45,7 +43,7 @@ pub fn differential_impedance(
     single_ended_z * 2.0 * coupling
 }
 
-fn find_dielectric_below(stackup: &LayerStack, layer_index: usize) -> (f64, f64) {
+fn find_dielectric_below(stackup: &LayerStack, _layer_index: usize) -> (f64, f64) {
     if let Some(diel) = stackup.dielectrics.first() {
         (diel.er, diel.thickness_mm)
     } else {

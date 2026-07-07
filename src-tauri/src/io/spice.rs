@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use crate::model::schematic::SchematicSheet;
-use crate::model::netlist::{Netlist, PinRef};
 use crate::engine::netlist::extract_netlist;
 
 /// Map component names to SPICE prefixes

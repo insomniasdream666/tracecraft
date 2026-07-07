@@ -11,6 +11,7 @@ use crate::model::library::ComponentId;
 use crate::undo::command::*;
 use crate::engine::impedance;
 use crate::engine::tuning;
+use crate::engine::stitching;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Model3DData {
@@ -450,6 +451,46 @@ pub fn compute_impedance(
 }
 
 #[tauri::command]
+pub fn route_bus(
+    state: State<AppState>,
+    net_ids: Vec<NetId>,
+    layer: LayerId,
+    start_points: Vec<Point>,
+    end_points: Vec<Point>,
+    width: f64,
+    spacing: f64,
+) -> Result<Vec<TraceId>, String> {
+    if net_ids.len() != start_points.len() || net_ids.len() != end_points.len() {
+        return Err("Mismatched net/point count for bus routing".to_string());
+    }
+    let mut board = state.board.write();
+    let mut ids = Vec::new();
+    let count = net_ids.len();
+    let total_width = (count - 1) as f64 * spacing;
+    let start_offset = -total_width / 2.0;
+
+    for i in 0..count {
+        let dx = end_points[i].x - start_points[i].x;
+        let dy = end_points[i].y - start_points[i].y;
+        let len = (dx * dx + dy * dy).sqrt();
+        let offset = start_offset + i as f64 * spacing;
+        let (nx, ny) = if len > 1e-6 { (-dy / len * offset, dx / len * offset) } else { (0.0, 0.0) };
+
+        let adjusted_start = Point::new(start_points[i].x + nx, start_points[i].y + ny);
+        let adjusted_end = Point::new(end_points[i].x + nx, end_points[i].y + ny);
+
+        let trace = Trace {
+            net_id: Some(net_ids[i]),
+            layer,
+            width,
+            points: vec![adjusted_start, adjusted_end],
+        };
+        ids.push(TraceId(board.traces.insert(trace)));
+    }
+    Ok(ids)
+}
+
+#[tauri::command]
 pub fn apply_length_tuning(
     state: State<AppState>,
     trace_index: usize,
@@ -462,6 +503,53 @@ pub fn apply_length_tuning(
         *t = tuned;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn stitch_vias(
+    state: State<AppState>,
+    start_x: f64, start_y: f64,
+    end_x: f64, end_y: f64,
+    net_id: usize,
+    spacing: f64,
+) -> Result<Vec<ViaId>, String> {
+    let (via_diameter, via_drill) = {
+        let board = state.board.read();
+        (board.design_rules.default_via_diameter, board.design_rules.default_via_drill)
+    };
+    let mut board = state.board.write();
+    let start = Point::new(start_x, start_y);
+    let end = Point::new(end_x, end_y);
+    let ids = stitching::stitch_via_line(
+        &mut board, start, end, NetId(net_id), spacing,
+        via_diameter, via_drill,
+        LayerId(1), LayerId(2),
+    );
+    Ok(ids)
+}
+
+#[tauri::command]
+pub fn stitch_via_shield(
+    state: State<AppState>,
+    trace_index: usize,
+    offset: f64,
+    spacing: f64,
+) -> Result<Vec<ViaId>, String> {
+    let (trace, via_diameter, via_drill) = {
+        let board = state.board.read();
+        let t = board.traces.get(trace_index)
+            .ok_or("Trace not found")?
+            .clone();
+        (t, board.design_rules.default_via_diameter, board.design_rules.default_via_drill)
+    };
+    let mut board = state.board.write();
+    let net_id = trace.net_id.unwrap_or(NetId(0));
+    let ids = stitching::stitch_via_shield(
+        &mut board, &trace.points, net_id, spacing, offset,
+        via_diameter, via_drill,
+        LayerId(1), LayerId(2),
+    );
+    Ok(ids)
 }
 
 #[tauri::command]

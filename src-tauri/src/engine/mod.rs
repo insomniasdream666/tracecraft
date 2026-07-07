@@ -7,3 +7,4 @@ pub mod ratsnest;
 pub mod shove;
 pub mod impedance;
 pub mod tuning;
+pub mod stitching;

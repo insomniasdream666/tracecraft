@@ -29,6 +29,9 @@ pub enum DRCRule {
     HoleSize,
     SilkscreenOverlap,
     UnroutedNet,
+    SolderMaskSliver,
+    CopperBalancing,
+    AcidTrap,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -216,6 +219,61 @@ pub fn run_drc_checks(board: &PcbBoard) -> Vec<DRCViolation> {
     }
 
     // 5. Via hole size check
+
+    // 6. DFM: Check for acute angles (acid traps) in traces
+    for (id, trace) in board.traces.iter() {
+        for window in trace.points.windows(3) {
+            let a = &window[0];
+            let b = &window[1];
+            let c = &window[2];
+            let angle = interior_angle(a, b, c);
+            if angle > 0.0 && angle < 45.0 {
+                violations.push(DRCViolation {
+                    severity: Severity::Warning,
+                    rule: DRCRule::AcidTrap,
+                    description: format!("Acute angle {:.1}° in trace — potential acid trap", angle),
+                    location: *b,
+                    layer: trace.layer,
+                    element_a: ElementRef { kind: ElementKind::Trace, id },
+                    element_b: ElementRef { kind: ElementKind::Trace, id },
+                });
+            }
+        }
+    }
+
+    // 7. DFM: Check solder mask slivers — close parallel traces on outer layers
+    let outer_layers = [LayerId(1), LayerId(2), LayerId(10), LayerId(11)];
+    for layer in &outer_layers {
+        let layer_traces: Vec<(usize, &Trace)> = board.traces.iter()
+            .filter(|(_, t)| t.layer == *layer)
+            .collect();
+        for i in 0..layer_traces.len() {
+            for j in (i + 1)..layer_traces.len() {
+                let (id_a, a) = layer_traces[i];
+                let (id_b, b) = layer_traces[j];
+                for seg_a in a.points.windows(2) {
+                    for seg_b in b.points.windows(2) {
+                        let d = segments_min_distance(&seg_a[0], &seg_a[1], &seg_b[0], &seg_b[1]);
+                        let gap = d - a.width / 2.0 - b.width / 2.0;
+                        if gap > 0.0 && gap < 0.1 {
+                            violations.push(DRCViolation {
+                                severity: Severity::Warning,
+                                rule: DRCRule::SolderMaskSliver,
+                                description: format!("Solder mask sliver: {:.3}mm gap", gap),
+                                location: Point::new(
+                                    (seg_a[0].x + seg_a[1].x + seg_b[0].x + seg_b[1].x) / 4.0,
+                                    (seg_a[0].y + seg_a[1].y + seg_b[0].y + seg_b[1].y) / 4.0,
+                                ),
+                                layer: *layer,
+                                element_a: ElementRef { kind: ElementKind::Trace, id: id_a },
+                                element_b: ElementRef { kind: ElementKind::Trace, id: id_b },
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
     for (id, via) in board.vias.iter() {
         if via.drill < rules.min_hole_size {
             violations.push(DRCViolation {
@@ -234,6 +292,19 @@ pub fn run_drc_checks(board: &PcbBoard) -> Vec<DRCViolation> {
     }
 
     violations
+}
+
+fn interior_angle(a: &Point, b: &Point, c: &Point) -> f64 {
+    let ba_x = a.x - b.x;
+    let ba_y = a.y - b.y;
+    let bc_x = c.x - b.x;
+    let bc_y = c.y - b.y;
+    let dot = ba_x * bc_x + ba_y * bc_y;
+    let len_a = (ba_x * ba_x + ba_y * ba_y).sqrt();
+    let len_c = (bc_x * bc_x + bc_y * bc_y).sqrt();
+    if len_a < 1e-9 || len_c < 1e-9 { return 180.0; }
+    let cos_angle = (dot / (len_a * len_c)).clamp(-1.0, 1.0);
+    cos_angle.acos().to_degrees()
 }
 
 fn trace_center(trace: &Trace) -> Point {
