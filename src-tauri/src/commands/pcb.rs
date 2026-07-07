@@ -9,6 +9,8 @@ use crate::model::pcb::*;
 use crate::model::schematic::NetLabel;
 use crate::model::library::ComponentId;
 use crate::undo::command::*;
+use crate::engine::impedance;
+use crate::engine::tuning;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Model3DData {
@@ -423,6 +425,43 @@ pub fn get_board_properties(state: State<AppState>) -> Result<BoardProperties, S
         layer_count: board.layers.layers.len(),
         layer_names: board.layers.layers.iter().map(|l| l.name.clone()).collect(),
     })
+}
+
+#[tauri::command]
+pub fn get_stackup(state: State<AppState>) -> Result<LayerStack, String> {
+    Ok(state.board.read().layers.clone())
+}
+
+#[tauri::command]
+pub fn set_stackup(state: State<AppState>, stackup: LayerStack) -> Result<(), String> {
+    state.board.write().layers = stackup;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn compute_impedance(
+    state: State<AppState>,
+    target_impedance: f64,
+    layer_index: usize,
+) -> Result<ImpedanceResult, String> {
+    let board = state.board.read();
+    let t = impedance::copper_thickness_mm(board.layers.copper_weight_oz);
+    Ok(impedance::microstrip_impedance(target_impedance, &board.layers, layer_index, t))
+}
+
+#[tauri::command]
+pub fn apply_length_tuning(
+    state: State<AppState>,
+    trace_index: usize,
+    segment_index: usize,
+    extra_length: f64,
+) -> Result<(), String> {
+    let mut board = state.board.write();
+    if let Some(t) = board.traces.get_mut(trace_index) {
+        let tuned = tuning::apply_tuning(t, segment_index, extra_length);
+        *t = tuned;
+    }
+    Ok(())
 }
 
 #[tauri::command]

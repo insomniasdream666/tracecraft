@@ -89,6 +89,8 @@ pub struct BoardOutline {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LayerStack {
     pub layers: Vec<LayerDef>,
+    pub dielectrics: Vec<Dielectric>,
+    pub copper_weight_oz: f64,
 }
 
 impl LayerStack {
@@ -102,8 +104,27 @@ impl LayerStack {
                 LayerDef { id: LayerId(20), name: "Top Silkscreen".into(), kind: LayerKind::Silkscreen, color: "#F0F0F0".into() },
                 LayerDef { id: LayerId(21), name: "Bottom Silkscreen".into(), kind: LayerKind::Silkscreen, color: "#C0C0C0".into() },
             ],
+            dielectrics: vec![
+                Dielectric { name: "FR-4".into(), er: 4.5, thickness_mm: 1.6, loss_tangent: 0.02 },
+            ],
+            copper_weight_oz: 1.0,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Dielectric {
+    pub name: String,
+    pub er: f64,
+    pub thickness_mm: f64,
+    pub loss_tangent: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImpedanceResult {
+    pub trace_width_mm: f64,
+    pub impedance_ohms: f64,
+    pub trace_thickness_mm: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
