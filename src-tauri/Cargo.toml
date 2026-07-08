@@ -29,7 +29,7 @@ parking_lot = "0.12"
 async-trait = "0.1"
 
 ureq = "3"
-zip = "2"
+zip = "8"
 
 # AI inference deps (uncomment and add --features ai to enable):
 # ort = { version = "2", features = ["load-dynamic"] }
