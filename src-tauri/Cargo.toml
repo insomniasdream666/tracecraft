@@ -1,6 +1,6 @@
 [package]
 name = "tracecraft"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [lib]
@@ -30,6 +30,8 @@ async-trait = "0.1"
 
 ureq = "3"
 zip = "2"
+fastrand = "2.0"
+regex = "1.10"
 
 # AI inference deps (uncomment and add --features ai to enable):
 # ort = { version = "2", features = ["load-dynamic"] }

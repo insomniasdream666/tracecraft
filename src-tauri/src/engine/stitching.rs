@@ -15,6 +15,9 @@ pub fn stitch_via_line(
     start_layer: LayerId,
     end_layer: LayerId,
 ) -> Vec<ViaId> {
+    if spacing <= 0.0 {
+        return vec![];
+    }
     let dx = end.x - start.x;
     let dy = end.y - start.y;
     let len = (dx * dx + dy * dy).sqrt();
@@ -57,7 +60,7 @@ pub fn stitch_via_shield(
     start_layer: LayerId,
     end_layer: LayerId,
 ) -> Vec<ViaId> {
-    if trace_points.len() < 2 {
+    if trace_points.len() < 2 || spacing <= 0.0 {
         return vec![];
     }
 
@@ -73,7 +76,7 @@ pub fn stitch_via_shield(
         let nx = -dy / len * offset;
         let ny = dx / len * offset;
 
-        // Via on each side at the start point
+        // Via on each side at the segment start
         let left = Point::new(a.x + nx, a.y + ny);
         let right = Point::new(a.x - nx, a.y - ny);
 
@@ -109,13 +112,35 @@ pub fn stitch_via_shield(
         }
     }
 
+    // Add vias at the final trace point if it wasn't already covered
+    let last = trace_points.last().unwrap();
+    let second_last = trace_points[trace_points.len() - 2];
+    let dx = last.x - second_last.x;
+    let dy = last.y - second_last.y;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len > 1e-6 {
+        let nx = -dy / len * offset;
+        let ny = dx / len * offset;
+        for sign in [-1.0, 1.0] {
+            let via = Via {
+                position: Point::new(last.x + nx * sign, last.y + ny * sign),
+                start_layer,
+                end_layer,
+                diameter: via_diameter,
+                drill: via_drill,
+                net_id: Some(net_id),
+            };
+            ids.push(ViaId(board.vias.insert(via)));
+        }
+    }
+
     ids
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::pcb::{PcbBoard, LayerStack};
+    use crate::model::pcb::PcbBoard;
 
     #[test]
     fn test_stitch_via_line() {

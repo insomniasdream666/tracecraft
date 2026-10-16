@@ -51,6 +51,21 @@ fn find_dielectric_below(stackup: &LayerStack, _layer_index: usize) -> (f64, f64
     }
 }
 
+/// Compute microstrip impedance from an existing trace width.
+pub fn impedance_from_width(
+    width_mm: f64,
+    stackup: &LayerStack,
+    layer_index: usize,
+    trace_thickness_mm: f64,
+) -> f64 {
+    let (er, height_mm) = find_dielectric_below(stackup, layer_index);
+    let h = height_mm.max(0.01);
+    let t = trace_thickness_mm.max(0.001);
+    let w = width_mm.max(0.01);
+    let coef = 87.0 / (er + 1.41).sqrt();
+    coef * (5.98 * h / (0.8 * w + t)).ln()
+}
+
 /// Calculate copper thickness for given weight
 pub fn copper_thickness_mm(oz: f64) -> f64 {
     // 1 oz = 0.035 mm

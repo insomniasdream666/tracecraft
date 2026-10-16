@@ -125,23 +125,16 @@ export const useSchematicStore = create<SchematicState>((set, get) => ({
 
   exportImage: async () => {
     try {
-      const path = await save({ filters: [{ name: "PNG Image", extensions: ["png"] }, { name: "SVG Image", extensions: ["svg"] }] });
+      const path = await save({ filters: [{ name: "PNG Image", extensions: ["png"] }] });
       if (!path) return;
       set({ loading: true });
-      const svg = window.__tracecraft_schematic_svg;
-      if (!svg) { set({ error: "Canvas not ready", loading: false }); return; }
-      if (path.endsWith(".svg")) {
-        const { writeTextFile } = await import("@tauri-apps/plugin-fs");
-        await writeTextFile(path, svg);
-      } else {
-        const dataUrl = window.__tracecraft_schematic_png;
-        if (!dataUrl) { set({ error: "Canvas not ready", loading: false }); return; }
-        const base64 = dataUrl.split(",")[1];
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        await writeFile(path, bytes);
-      }
+      const dataUrl = window.__tracecraft_schematic_png;
+      if (!dataUrl) { set({ error: "Canvas not ready", loading: false }); return; }
+      const base64 = dataUrl.split(",")[1];
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      await writeFile(path, bytes);
       set({ loading: false });
     } catch (e) {
       set({ error: String(e), loading: false });

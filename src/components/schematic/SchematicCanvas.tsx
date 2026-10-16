@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useCallback, useMemo } from "react";
 import { Layer, Circle, Line, Text, Group, Rect } from "react-konva";
+import { invoke } from "@tauri-apps/api/core";
 import { CircuitBoard } from "lucide-react";
 import { KonvaCanvas } from "../common/KonvaCanvas";
 import { useSchematicStore } from "../../stores/schematicStore";
@@ -55,10 +56,10 @@ export const SchematicCanvas = React.memo(function SchematicCanvas() {
 
   useEffect(() => {
     if (stageRef.current) {
-      window.__tracecraft_schematic_svg = stageRef.current.toSVG();
-      stageRef.current.toDataURL({ mimeType: "image/png", pixelRatio: 2 }).then((url: string) => {
-        window.__tracecraft_schematic_png = url;
-      });
+      if (typeof stageRef.current.toSVG === "function") {
+        window.__tracecraft_schematic_svg = stageRef.current.toSVG();
+      }
+      window.__tracecraft_schematic_png = stageRef.current.toDataURL({ mimeType: "image/png", pixelRatio: 2 });
     }
   }, [sheet]);
 
@@ -72,7 +73,6 @@ export const SchematicCanvas = React.memo(function SchematicCanvas() {
       const name = prompt("Net label name:");
       if (name && sheet) {
         try {
-          const { invoke } = await import("@tauri-apps/api/core");
           await invoke("add_net_label", { sheetId: sheet.id, name, position: pos });
           await loadSheet();
         } catch (e) {
@@ -82,7 +82,6 @@ export const SchematicCanvas = React.memo(function SchematicCanvas() {
     } else if (activeTool === "junction") {
       if (sheet) {
         try {
-          const { invoke } = await import("@tauri-apps/api/core");
           await invoke("add_junction", { sheetId: sheet.id, position: pos });
           await loadSheet();
         } catch (e) {
@@ -274,7 +273,6 @@ export const SchematicCanvas = React.memo(function SchematicCanvas() {
 
   const runERC = async () => {
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
       const violations = await invoke<any[]>("run_erc_command");
       setErcViolations(violations);
     } catch (e) {
@@ -299,7 +297,6 @@ export const SchematicCanvas = React.memo(function SchematicCanvas() {
     }
     if (e.key === "Delete" || e.key === "Backspace") {
       if (selectedIds.size > 0 && sheet) {
-        const { invoke } = await import("@tauri-apps/api/core");
         for (const id of selectedIds) {
           const parts = id.split("-");
           const elementType = parts.length > 1 ? parts[0] : "symbol";
@@ -355,10 +352,10 @@ export const SchematicCanvas = React.memo(function SchematicCanvas() {
         onWorldMouseMove={handleWorldMouseMove}
         onStageReady={(stage) => {
           stageRef.current = stage;
-          window.__tracecraft_schematic_svg = stage.toSVG();
-          stage.toDataURL({ mimeType: "image/png", pixelRatio: 2 }).then((url: string) => {
-            window.__tracecraft_schematic_png = url;
-          });
+          if (typeof stage.toSVG === "function") {
+            window.__tracecraft_schematic_svg = stage.toSVG();
+          }
+          window.__tracecraft_schematic_png = stage.toDataURL({ mimeType: "image/png", pixelRatio: 2 });
         }}
       >
         <Layer>

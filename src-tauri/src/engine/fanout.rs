@@ -35,6 +35,7 @@ pub fn fanout_footprint(board: &mut PcbBoard, footprint_id: FootprintId) -> Resu
             layer: LayerId(1),
             width: 0.25,
             points: vec![start, end],
+            attenuation_db_per_m: 0.0,
         };
         let id = board.traces.insert(trace);
         trace_ids.push(TraceId(id));

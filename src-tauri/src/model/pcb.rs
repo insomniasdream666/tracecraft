@@ -11,7 +11,10 @@ pub struct PcbBoard {
     pub traces: Arena<Trace>,
     pub vias: Arena<Via>,
     pub zones: Arena<Zone>,
+    #[serde(default)]
     pub diff_pairs: Vec<DifferentialPair>,
+    #[serde(default)]
+    pub flex_zones: Vec<FlexZone>,
     pub outline: Option<BoardOutline>,
     pub layers: LayerStack,
     pub design_rules: DesignRules,
@@ -26,6 +29,7 @@ impl Default for PcbBoard {
             vias: Arena::new(),
             zones: Arena::new(),
             diff_pairs: vec![],
+            flex_zones: vec![],
             outline: None,
             layers: LayerStack::default_2layer(),
             design_rules: DesignRules::default(),
@@ -59,6 +63,8 @@ pub struct Trace {
     pub layer: LayerId,
     pub width: f64,
     pub points: Vec<Point>,
+    #[serde(default)]
+    pub attenuation_db_per_m: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,11 +93,29 @@ pub struct BoardOutline {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlexZone {
+    pub name: String,
+    pub region: Vec<Point>,
+    pub bend_radius_mm: f64,
+    pub num_bends: u32,
+    #[serde(default)]
+    pub layer_keepout: Vec<LayerId>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LayerStack {
     pub layers: Vec<LayerDef>,
+    #[serde(default = "default_dielectrics")]
     pub dielectrics: Vec<Dielectric>,
+    #[serde(default = "default_copper_weight")]
     pub copper_weight_oz: f64,
 }
+
+fn default_dielectrics() -> Vec<Dielectric> {
+    vec![Dielectric { name: "FR-4".into(), er: 4.5, thickness_mm: 1.6, loss_tangent: 0.02 }]
+}
+
+fn default_copper_weight() -> f64 { 1.0 }
 
 impl LayerStack {
     pub fn default_2layer() -> Self {

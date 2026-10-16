@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { PcbBoard, RatsnestLine } from "../types/pcb";
-import { PadDef } from "../types/library";
+import { FootprintDef } from "../types/library";
 
 interface RoutingProgress {
   current: number;
@@ -18,7 +18,7 @@ interface PCBState {
   error: string | null;
   ratsnest: RatsnestLine[];
   drcViolations: any[];
-  footprintCache: Record<string, { pads: PadDef[] }>;
+  footprintCache: Record<string, FootprintDef>;
   routingActive: boolean;
   routingProgress: RoutingProgress | null;
   loadBoard: () => Promise<void>;
@@ -58,9 +58,9 @@ export const usePCBStore = create<PCBState>((set, get) => ({
     try {
       const board = await invoke<PcbBoard>("get_board_state");
       const componentIds = [...new Set(Object.values(board.footprints).map(fp => fp.component_id))];
-      let footprintCache: Record<string, { pads: PadDef[] }> = {};
+      let footprintCache: Record<string, FootprintDef> = {};
       if (componentIds.length > 0) {
-        const defs = await invoke<Record<string, { pads: PadDef[] }>>("get_footprint_defs", { ids: componentIds });
+        const defs = await invoke<Record<string, FootprintDef>>("get_footprint_defs", { ids: componentIds });
         footprintCache = defs;
       }
       set({ board, footprintCache, loading: false });

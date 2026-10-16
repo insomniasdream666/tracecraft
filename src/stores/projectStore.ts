@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { writeFile } from "@tauri-apps/plugin-fs";
+import { useUIStore } from "./uiStore";
 import { ProjectSummary } from "../types/project";
 
 interface ProjectState {
@@ -125,7 +126,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   exportSchematicImage: async (path: string) => {
     set({ loading: true, error: null });
     try {
-      const { useUIStore } = await import("../stores/uiStore");
       const canvasApi = useUIStore.getState().canvasApi;
       if (!canvasApi || !("stageRef" in canvasApi)) { throw new Error("Canvas not ready"); }
       const stage = (canvasApi as any).stageRef;

@@ -1,5 +1,6 @@
 import React from "react";
 import { Layer, Line, Circle } from "react-konva";
+import { invoke } from "@tauri-apps/api/core";
 import { usePCBStore } from "../../stores/pcbStore";
 import { useUIStore } from "../../stores/uiStore";
 import { Point } from "../../lib/geometry";
@@ -33,7 +34,6 @@ export function DiffPairRouteTool() {
       const pairIndex = 0;
       const layer = activeLayer;
       try {
-        const { invoke } = await import("@tauri-apps/api/core");
         await invoke("route_diff_pair", {
           pairIndex,
           layer: { 0: layer },

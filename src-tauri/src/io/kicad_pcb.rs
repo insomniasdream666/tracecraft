@@ -52,6 +52,7 @@ pub fn import_kicad_pcb(path: &str) -> Result<PcbBoard, String> {
                 layer,
                 width,
                 points: vec![Point { x: x1, y: y1 }, Point { x: x2, y: y2 }],
+                attenuation_db_per_m: 0.0,
             });
         }
     }

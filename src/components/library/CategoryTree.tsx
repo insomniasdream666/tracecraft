@@ -5,7 +5,7 @@ import { Category } from "../../types/library";
 interface CategoryTreeProps {
   categories: Category[];
   selected: string | null;
-  onSelect: (name: string | null) => void;
+  onSelect: (categoryId: string | null) => void;
 }
 
 function hasSubcategories(categories: Category[], parentId: string): boolean {
@@ -22,7 +22,7 @@ function TreeNode({
   category: Category;
   categories: Category[];
   selected: string | null;
-  onSelect: (name: string | null) => void;
+  onSelect: (categoryId: string | null) => void;
   depth: number;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -34,10 +34,10 @@ function TreeNode({
       <button
         onClick={() => {
           if (hasChildren) setExpanded((prev) => !prev);
-          onSelect(category.name);
+          onSelect(category.id);
         }}
         className={`w-full flex items-center gap-1 text-left px-2 py-1 text-xs rounded transition-colors ${
-          selected === category.name
+          selected === category.id
             ? "bg-copper text-white"
             : "text-text-secondary hover:bg-bg-elevated hover:text-text-primary"
         }`}

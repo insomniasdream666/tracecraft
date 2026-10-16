@@ -548,6 +548,7 @@ impl AStarRouter {
                         layer: LayerId(signal_layers[current_layer]),
                         width: 0.25,
                         points: current_segment.clone(),
+                        attenuation_db_per_m: 0.0,
                     });
                 }
                 // Start new layer (with via position at transition point)
@@ -557,6 +558,7 @@ impl AStarRouter {
                         layer: LayerId(signal_layers[current_layer]),
                         width: 0.25,
                         points: vec![*last, *last],
+                        attenuation_db_per_m: 0.0,
                     });
                     current_segment = vec![*last, pt];
                 } else {
@@ -574,6 +576,7 @@ impl AStarRouter {
                 layer: LayerId(signal_layers[current_layer]),
                 width: 0.25,
                 points: current_segment,
+                attenuation_db_per_m: 0.0,
             });
         }
 

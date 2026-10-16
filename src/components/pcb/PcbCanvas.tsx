@@ -166,6 +166,10 @@ export const PcbCanvas = React.memo(function PcbCanvas() {
       }
       return;
     }
+    if (activeTool === "route" || activeTool === "zone") {
+      setGhostPos(pos);
+      return;
+    }
     if (isDragging.current && dragStart.current) {
       const x = Math.min(dragStart.current.x, pos.x);
       const y = Math.min(dragStart.current.y, pos.y);
@@ -273,6 +277,7 @@ export const PcbCanvas = React.memo(function PcbCanvas() {
           height: p.size.height,
           layer: p.layer,
         })) || [];
+        const outline = cached?.outline || [];
         const hasVisibleLayer = pads.length === 0 || pads.some(p => visibleLayers.has(p.layer));
         if (!hasVisibleLayer) return null;
         return (
@@ -280,6 +285,7 @@ export const PcbCanvas = React.memo(function PcbCanvas() {
             key={id}
             footprint={fp}
             pads={pads}
+            outline={outline}
             selected={selectedIds.has(id)}
             onClick={() => select(id)}
           />
@@ -341,32 +347,54 @@ export const PcbCanvas = React.memo(function PcbCanvas() {
     const flat = tracePoints.flatMap(p => [p.x, p.y]);
     const layerColor = board?.layers.layers.find(l => l.id === activeLayer)?.color || "#D47A2F";
     return (
-      <Line
-        points={flat}
-        stroke={layerColor}
-        strokeWidth={1.5}
-        lineCap="round"
-        lineJoin="round"
-        dash={[4, 4]}
-      />
+      <>
+        <Line
+          points={flat}
+          stroke={layerColor}
+          strokeWidth={1.5}
+          lineCap="round"
+          lineJoin="round"
+          dash={[4, 4]}
+        />
+        {ghostPos && (
+          <Line
+            points={[tracePoints[tracePoints.length - 1].x, tracePoints[tracePoints.length - 1].y, ghostPos.x, ghostPos.y]}
+            stroke={layerColor}
+            strokeWidth={1}
+            dash={[2, 4]}
+            opacity={0.5}
+          />
+        )}
+      </>
     );
-  }, [activeTool, tracePoints, board, activeLayer]);
+  }, [activeTool, tracePoints, board, activeLayer, ghostPos]);
 
   const zonePreviewContent = useMemo(() => {
     if (activeTool !== "zone" || zonePoints.length < 2) return null;
     const flat = zonePoints.flatMap(p => [p.x, p.y]);
     const isClosed = zonePoints.length >= 3;
     return (
-      <Line
-        points={flat}
-        fill={isClosed ? "#42BE6520" : undefined}
-        stroke="#42BE65"
-        strokeWidth={1.5}
-        closed={isClosed}
-        dash={isClosed ? undefined : [4, 4]}
-      />
+      <>
+        <Line
+          points={flat}
+          fill={isClosed ? "#42BE6520" : undefined}
+          stroke="#42BE65"
+          strokeWidth={1.5}
+          closed={isClosed}
+          dash={isClosed ? undefined : [4, 4]}
+        />
+        {ghostPos && (
+          <Line
+            points={[zonePoints[zonePoints.length - 1].x, zonePoints[zonePoints.length - 1].y, ghostPos.x, ghostPos.y]}
+            stroke="#42BE65"
+            strokeWidth={1}
+            dash={[2, 4]}
+            opacity={0.5}
+          />
+        )}
+      </>
     );
-  }, [activeTool, zonePoints]);
+  }, [activeTool, zonePoints, ghostPos]);
 
   const selectionRectContent = useMemo(() => {
     if (!selectionRect) return null;
@@ -402,6 +430,10 @@ export const PcbCanvas = React.memo(function PcbCanvas() {
 
   const handleWorldDrop = useCallback(async (pos: Point, componentId: string) => {
     await usePCBStore.getState().placeFootprint(componentId, pos.x, pos.y);
+    const { canvasApi } = useUIStore.getState();
+    if (canvasApi) {
+      canvasApi.zoomToBounds({ x: pos.x - 10, y: pos.y - 10, width: 20, height: 20 });
+    }
   }, []);
 
   return (

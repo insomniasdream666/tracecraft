@@ -22,11 +22,29 @@ export interface RatsnestLine {
   connected: boolean;
 }
 
+export interface DiffPair {
+  name: string;
+  p_net: number;
+  n_net: number;
+  width: number;
+  gap: number;
+}
+
+export interface FlexZone {
+  name: string;
+  region: Point[];
+  bend_radius_mm: number;
+  num_bends: number;
+  layer_keepout: number[];
+}
+
 export interface PcbBoard {
   footprints: Record<number, FootprintInstance>;
   traces: Record<number, Trace>;
   vias: Record<number, Via>;
   zones: Record<number, Zone>;
+  diff_pairs: DiffPair[];
+  flex_zones: FlexZone[];
   outline: BoardOutline | null;
   layers: LayerStack;
   design_rules: DesignRules;
@@ -73,6 +91,15 @@ export interface BoardOutline {
 
 export interface LayerStack {
   layers: LayerDef[];
+  dielectrics: Dielectric[];
+  copper_weight_oz: number;
+}
+
+export interface Dielectric {
+  name: string;
+  er: number;
+  thickness_mm: number;
+  loss_tangent: number;
 }
 
 export interface LayerDef {

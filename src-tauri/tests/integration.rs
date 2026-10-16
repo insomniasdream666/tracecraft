@@ -49,6 +49,7 @@ fn test_pcb_place_footprint() {
 fn test_pcb_route_trace() {
     let mut board = tracecraft_lib::model::pcb::PcbBoard::default();
     let id = board.traces.insert(tracecraft_lib::model::pcb::Trace {
+            attenuation_db_per_m: 0.0,
         net_id: None,
         layer: tracecraft_lib::model::id::LayerId(1),
         width: 0.25,
@@ -105,10 +106,12 @@ fn test_pcb_set_board_outline() {
 fn test_pcb_delete_restores_arena_slot() {
     let mut board = tracecraft_lib::model::pcb::PcbBoard::default();
     let id1 = board.traces.insert(tracecraft_lib::model::pcb::Trace {
+            attenuation_db_per_m: 0.0,
         net_id: None, layer: tracecraft_lib::model::id::LayerId(1), width: 0.25,
         points: vec![point(0.0, 0.0), point(10.0, 0.0)],
     });
     let id2 = board.traces.insert(tracecraft_lib::model::pcb::Trace {
+            attenuation_db_per_m: 0.0,
         net_id: None, layer: tracecraft_lib::model::id::LayerId(1), width: 0.25,
         points: vec![point(0.0, 10.0), point(10.0, 10.0)],
     });
@@ -117,6 +120,7 @@ fn test_pcb_delete_restores_arena_slot() {
     board.traces.remove(id2);
     assert_eq!(board.traces.len(), 1);
     let new_id = board.traces.insert(tracecraft_lib::model::pcb::Trace {
+            attenuation_db_per_m: 0.0,
         net_id: None, layer: tracecraft_lib::model::id::LayerId(1), width: 0.25,
         points: vec![point(0.0, 20.0), point(10.0, 20.0)],
     });
@@ -598,6 +602,7 @@ fn test_drc_no_violations_on_empty_board() {
 fn test_drc_trace_width_violation() {
     let mut board = tracecraft_lib::model::pcb::PcbBoard::default();
     board.traces.insert(tracecraft_lib::model::pcb::Trace {
+            attenuation_db_per_m: 0.0,
         net_id: None,
         layer: tracecraft_lib::model::id::LayerId(1),
         width: 0.01,
@@ -611,10 +616,12 @@ fn test_drc_trace_width_violation() {
 fn test_drc_trace_clearance_violation() {
     let mut board = tracecraft_lib::model::pcb::PcbBoard::default();
     board.traces.insert(tracecraft_lib::model::pcb::Trace {
+            attenuation_db_per_m: 0.0,
         net_id: None, layer: tracecraft_lib::model::id::LayerId(1), width: 0.25,
         points: vec![point(0.0, 0.0), point(10.0, 0.0)],
     });
     board.traces.insert(tracecraft_lib::model::pcb::Trace {
+            attenuation_db_per_m: 0.0,
         net_id: None, layer: tracecraft_lib::model::id::LayerId(1), width: 0.25,
         points: vec![point(0.0, 0.15), point(10.0, 0.15)],
     });
@@ -745,6 +752,7 @@ fn test_get_board_bounds_with_footprints() {
 fn test_get_board_bounds_with_traces_and_vias() {
     let mut board = tracecraft_lib::model::pcb::PcbBoard::default();
     board.traces.insert(tracecraft_lib::model::pcb::Trace {
+            attenuation_db_per_m: 0.0,
         net_id: None, layer: tracecraft_lib::model::id::LayerId(1), width: 0.25,
         points: vec![point(-5.0, -10.0), point(50.0, 30.0)],
     });
@@ -863,12 +871,14 @@ fn test_edge_zero_size_footprint() {
 fn test_edge_overlapping_traces() {
     let mut board = tracecraft_lib::model::pcb::PcbBoard::default();
     let id1 = board.traces.insert(tracecraft_lib::model::pcb::Trace {
+            attenuation_db_per_m: 0.0,
         net_id: None,
         layer: tracecraft_lib::model::id::LayerId(1),
         width: 0.25,
         points: vec![point(0.0, 0.0), point(10.0, 0.0)],
     });
     let id2 = board.traces.insert(tracecraft_lib::model::pcb::Trace {
+            attenuation_db_per_m: 0.0,
         net_id: None,
         layer: tracecraft_lib::model::id::LayerId(1),
         width: 0.25,
@@ -939,6 +949,7 @@ fn test_edge_board_outline_empty_shape() {
 fn test_edge_nan_inf_coordinates() {
     let mut board = tracecraft_lib::model::pcb::PcbBoard::default();
     board.traces.insert(tracecraft_lib::model::pcb::Trace {
+            attenuation_db_per_m: 0.0,
         net_id: None,
         layer: tracecraft_lib::model::id::LayerId(1),
         width: 0.25,
@@ -953,6 +964,7 @@ fn test_edge_nan_inf_coordinates() {
         layer: tracecraft_lib::model::id::LayerId(1),
         width: 0.25,
         points: vec![point(0.0, 0.0), point(f64::INFINITY, f64::INFINITY)],
+        attenuation_db_per_m: 0.0,
     });
     // Should not crash
     let _violations = tracecraft_lib::engine::drc::run_drc_checks(&board);

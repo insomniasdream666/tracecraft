@@ -1,4 +1,6 @@
 import React from "react";
+import { invoke } from "@tauri-apps/api/core";
+import toast from "react-hot-toast";
 import {
   MousePointer2,
   Pencil,
@@ -86,7 +88,6 @@ export function Toolbar() {
         const { mode, canvasApi } = useUIStore.getState();
         if (!canvasApi) return;
         try {
-          const { invoke } = await import("@tauri-apps/api/core");
           if (mode === "pcb") {
             const bounds = await invoke<any>("get_board_bounds");
             canvasApi.zoomToBounds(bounds);
@@ -148,7 +149,6 @@ export function Toolbar() {
           <ToolButton icon={<FileText size={18} />} label="Annotate" onClick={() => useSchematicStore.getState().annotate()} />
           <ToolButton icon={<AlertTriangle size={18} />} label="Run ERC" onClick={async () => {
             const violations = await useSchematicStore.getState().runERC();
-            const { default: toast } = await import("react-hot-toast");
             if (violations.length === 0) {
               toast.success("No ERC violations — clean schematic!");
             } else {

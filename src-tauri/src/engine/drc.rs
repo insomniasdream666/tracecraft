@@ -345,6 +345,7 @@ mod tests {
             layer: LayerId(1),
             width: 0.01,
             points: vec![Point::new(0.0, 0.0), Point::new(10.0, 0.0)],
+            attenuation_db_per_m: 0.0,
         });
         let v = run_drc_checks(&board);
         assert!(v.iter().any(|v| v.rule == DRCRule::TraceWidth));
@@ -356,10 +357,12 @@ mod tests {
         board.traces.insert(Trace {
             net_id: None, layer: LayerId(1), width: 0.25,
             points: vec![Point::new(0.0, 0.0), Point::new(10.0, 0.0)],
+            attenuation_db_per_m: 0.0,
         });
         board.traces.insert(Trace {
             net_id: None, layer: LayerId(1), width: 0.25,
             points: vec![Point::new(0.0, 0.15), Point::new(10.0, 0.15)],
+            attenuation_db_per_m: 0.0,
         });
         let v = run_drc_checks(&board);
         assert!(v.iter().any(|v| v.rule == DRCRule::TraceClearance));

@@ -209,7 +209,12 @@ tracecraft/
 │   │   │   ├── drc.rs               # Clearance, width, annular ring, soldermask checks
 │   │   │   ├── erc.rs               # Floating pins, shorted outputs, unconnected nets
 │   │   │   ├── netlist.rs           # Extract netlist from schematic, diff, sync
-│   │   │   └── ratsnest.rs          # Generate ratsnest lines for connected-but-unrouted nets
+│   │   │   ├── ratsnest.rs          # Generate ratsnest lines for connected-but-unrouted nets
+│   │   │   ├── shove.rs             # Push & shove trace collision resolution
+│   │   │   ├── impedance.rs         # IPC-2141A microstrip/differential impedance
+│   │   │   ├── tuning.rs            # Serpentine/accordion length tuning
+│   │   │   ├── stitching.rs         # Via stitching/shielding generator
+│   │   │   └── si.rs                # Signal integrity: eye diagram, reflection, transmission line
 │   │   ├── io/                      # File format parsers/generators
 │   │   │   ├── mod.rs
 │   │   │   ├── native.rs            # .tcproj: SQLite-backed serialization format
@@ -217,7 +222,9 @@ tracecraft/
 │   │   │   ├── kicad_pcb.rs         # KiCad 7+ PCB (.kicad_pcb) S-expression parser
 │   │   │   ├── gerber.rs            # RS-274X Gerber export
 │   │   │   ├── ipc2581.rs           # IPC-2581 XML export
-│   │   │   └── bom.rs               # BOM CSV/XLSX export
+│   │   │   ├── bom.rs               # BOM CSV/XLSX export
+│   │   │   ├── spice.rs             # SPICE netlist export (.cir)
+│   │   │   └── library_import.rs    # KiCad library import (.kicad_sym, .pretty)
 │   │   ├── db/                      # Database layer (SQLite)
 │   │   │   ├── mod.rs
 │   │   │   ├── migrations.rs        # Schema versions 1..N, run on app startup
@@ -260,7 +267,14 @@ tracecraft/
 │   │   │   ├── TraceTool.tsx        # Interactive trace routing tool
 │   │   │   ├── RatsnestRenderer.tsx # Draws ratsnest lines between connected pads
 │   │   │   ├── PcbToolbar.tsx       # Tool-specific options for PCB mode
-│   │   │   └── LayerPanel.tsx       # Layer visibility, color, stack-up control
+│   │   │   ├── LayerPanel.tsx       # Layer visibility, color, stack-up control
+│   │   │   ├── ImpedancePanel.tsx   # Impedance calculator with stackup-driven trace width
+│   │   │   ├── LengthTuningPanel.tsx# Serpentine/accordion length tuning tool
+│   │   │   ├── BusRoutePanel.tsx    # Multi-net bus routing with fixed spacing
+│   │   │   ├── ViaStitchPanel.tsx   # Via stitching/shielding generator
+│   │   │   ├── SIPanel.tsx          # Signal integrity analysis (eye, reflection, transmission line)
+│   │   │   ├── FlexZonePanel.tsx    # Rigid-flex zone drawing and management
+│   │   │   └── StackupVisualizer.tsx# Visual layer stack editor with KiCad import
 │   │   ├── preview/
 │   │   │   ├── Preview3D.tsx        # Three.js canvas for 3D board preview
 │   │   │   └── ModelLoader.tsx      # Loads .step/.wrl → Three.js mesh
@@ -331,7 +345,6 @@ tracecraft/
 | `thiserror` | 1.x | Ergonomic error types |
 | `tracing` | 0.1 | Structured logging |
 | `tracing-subscriber` | 0.3 | Log output |
-| `klv` (or custom) | — | KiCad S-expression parsing |
 | `quick-xml` | 0.31 | IPC-2581 XML generation |
 | `csv` | 1.3 | BOM CSV export |
 | `rust_xlsxwriter` | 0.64 | BOM XLSX export |
@@ -339,6 +352,9 @@ tracecraft/
 | `llama-cpp-2` | 0.1 | llama.cpp bindings for local LLM |
 | `image` | 0.25 | Thumbnail generation for library |
 | `parking_lot` | 0.12 | Faster Mutex/RwLock for app state |
+| `regex` | 1.10 | KiCad stackup parsing |
+| `fastrand` | 2.0 | Random numbers for eye diagrams |
+| `gltf` | 0.14 | GLTF/GLB 3D model parsing |
 
 ### Frontend (package.json)
 
@@ -395,6 +411,22 @@ draw_polygon(project_id, layer, points) → ZoneId
 set_board_outline(project_id, points) → void
 run_drc(project_id)                   → DRCViolation[]
 synchronize_netlist(project_id)       → NetlistDiff
+get_stackup(project_id)               → LayerStack
+set_stackup(project_id, stackup)      → void
+compute_impedance(target_z, layer, copper_oz) → ImpedanceResult
+apply_length_tuning(trace_idx, seg_idx, extra_len) → void
+route_bus(net_ids, layer, starts, ends, width, spacing) → TraceId[]
+stitch_vias(start, end, net_id, spacing) → ViaId[]
+stitch_via_shield(trace_idx, offset, spacing) → ViaId[]
+analyze_signal_integrity(trace_idx?)  → SiResult[]
+analyze_crosstalk()                   → CrosstalkResult[]
+generate_eye_diagram(trace_idx, bit_rate) → EyeDiagramResult
+simulate_reflections(trace_idx, params) → ReflectionResult
+analyze_transmission_line(trace_idx, max_freq) → TransmissionLineResult
+add_flex_zone(name, region, bend_r, bends) → void
+list_flex_zones()                     → FlexZone[]
+delete_flex_zone(index)               → void
+export_step(path)                     → void
 
 ── Auto-Routing Commands ──
 autoroute_net(project_id, net_id, strategy?) → RouteResult
@@ -407,11 +439,17 @@ get_component_detail(id)              → Component
 create_component(component)           → ComponentId
 import_kicad_library(path)            → ImportResult
 export_component(id, format)          → void
+import_stackup_file()                 → String (file path)
+parse_kicad_stackup(path)             → LayerStack
 
 ── AI Commands ──
 recommend_components(netlist_context) → AIRecommendation[]
 suggest_route(board_state, cursor_pos, net_id) → RouteSuggestion[]
 ai_chat(message, context)             → AsyncIterator<ChatChunk> (via events)
+
+── Simulation Commands ──
+export_spice_netlist(path)            → void
+run_spice_simulation(netlist_path, analysis_type) → String (raw output)
 
 ── DRC Commands ──
 run_drc(project_id)                   → DRCViolation[]

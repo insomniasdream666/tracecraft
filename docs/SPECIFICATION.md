@@ -70,27 +70,61 @@ The tool is designed for a single user working on one project at a time.
 | Custom categories | User-defined tagging and categorization |
 
 ### 5. File I/O
-
-| Format | Direction | Notes |
-|--------|-----------|-------|
-| TraceCraft native (.tcproj) | Import/Export | SQLite-based single-file project format |
-| KiCad schematic (.kicad_sch) | Import/Export | Interop with KiCad ecosystem |
-| KiCad PCB (.kicad_pcb) | Import/Export | Full round-trip support |
-| KiCad library (.kicad_sym, .pretty) | Import | Library ingestion |
-| IPC-2581 | Export | Industry standard for fab output |
-| Gerber RS-274X | Export | Fabrication output |
-| Netlist (various) | Import/Export | PADS, Altium, Generic CSV |
-| BOM (CSV, XLSX) | Export | Bill of Materials generation |
-
+ 
+ | Format | Direction | Notes |
+ |--------|-----------|-------|
+ | TraceCraft native (.tcproj) | Import/Export | SQLite-based single-file project format |
+ | KiCad schematic (.kicad_sch) | Import/Export | Interop with KiCad ecosystem |
+ | KiCad PCB (.kicad_pcb) | Import/Export | Full round-trip support |
+ | KiCad library (.kicad_sym, .pretty) | Import | Library ingestion |
+ | IPC-2581 | Export | Industry standard for fab output |
+ | Gerber RS-274X | Export | Fabrication output |
+ | Netlist (various) | Import/Export | PADS, Altium, Generic CSV |
+ | BOM (CSV, XLSX) | Export | Bill of Materials generation |
+ | **STEP (.step/.stp)** | **Export** | **Mechanical CAD for 3D models** |
+ 
 ### 6. 3D Preview
-
-| Feature | Description |
-|---------|-------------|
-| Real-time 3D rendering | WebGL-powered board visualization |
-| Component bodies | 3D models attached to footprints |
-| Layer visibility toggle | Show/hide copper, solder mask, silkscreen |
-| Orbit/pan/zoom | Standard 3D viewport controls |
-| Measurement tool | Distance, angle measurements in 3D |
+ 
+ | Feature | Description |
+ |---------|-------------|
+ | Real-time 3D rendering | WebGL-powered board visualization |
+ | Component bodies | 3D models attached to footprints |
+ | Layer visibility toggle | Show/hide copper, solder mask, silkscreen |
+ | Orbit/pan/zoom | Standard 3D viewport controls |
+ | Measurement tool | Distance, angle measurements in 3D |
+ | **STEP export** | **ISO 10303-21 mechanical CAD export** |
+ 
+ ### 7. Signal Integrity & Analysis
+ 
+ | Feature | Description |
+ |---------|-------------|
+ | Eye diagrams | PRBS-like signal with ISI, jitter, mask violations |
+ | Reflection simulation | Time-domain reflectometry with TDR analysis |
+ | Transmission line analysis | Frequency sweep: Z, phase, attenuation vs frequency |
+ | Crosstalk estimation | Near-end / far-end crosstalk between parallel traces |
+ | Impedance control | IPC-2141A microstrip, stackup-driven trace width |
+ | Length tuning | Serpentine/accordion patterns for matched lengths |
+ 
+ ### 8. Rigid-Flex Support
+ 
+ | Feature | Description |
+ |---------|-------------|
+ | Flex zones | Named zones with bend radius and bend count |
+ | Stackup visualization | Visual layer stack with dielectric properties |
+ | KiCad stackup import | Parse KiCad .kicad_pcb for stackup data |
+ | Flex zone drawing | Click-to-draw zones on canvas |
+ 
+ ### 9. Advanced Routing & Analysis
+ 
+ | Feature | Description |
+ |---------|-------------|
+ | Impedance control | IPC-2141A microstrip, stackup-driven trace width |
+ | Length tuning | Serpentine/accordion patterns for matched lengths |
+ | Bus routing | Parallel multi-net routing with fixed spacing |
+ | Via stitching/shielding | Ground via arrays along traces/lines |
+ | Advanced DFM | Acid trap, solder mask sliver, annular ring checks |
+ | SPICE netlist export | .cir format with simulation directives |
+ | ngspice wrapper | Transient/AC/DC simulation via ngspice |
 
 ### 7. AI Copilot
 
@@ -119,15 +153,29 @@ The tool is designed for a single user working on one project at a time.
 | AI Chat | **llama.cpp** bindings | Local LLM for design Q&A |
 | IPC | **Tauri invoke** | Typed IPC between React frontend and Rust backend |
 | Build | **Vite** | Fast HMR, optimized builds for Tauri |
+| 3D Models | **gltf** (Rust) | GLTF/GLB/STL/OBJ parsing |
+| SPICE | **ngspice** (external) | Transient/AC/DC circuit simulation |
 
 ## Non-Goals (MVP)
 
 - Multi-user collaboration / cloud sync
-- SPICE simulation integration
 - Web-based deployment
 - Mobile app
 - Plugin/extension system (post-MVP)
 - Marketplace for shared components (post-MVP)
+
+## Completed Post-MVP Features
+
+- **SPICE Simulation Integration** — SPICE netlist export + ngspice wrapper for simulation
+- **Signal Integrity Analysis** — Eye diagrams, reflection simulation, transmission line analysis, crosstalk estimation
+- **Rigid-Flex Support** — Flex zones with bend radius, stackup visualization with KiCad import
+- **STEP Export** — ISO 10303-21 mechanical CAD export for 3D models
+- **GLTF/GLB Support** — 3D model loading for component bodies
+- **Impedance Control** — IPC-2141A microstrip calculator with stackup-driven trace width
+- **Length Tuning** — Serpentine/accordion pattern generator for matched trace lengths
+- **Bus Routing** — Parallel multi-net routing with fixed spacing
+- **Via Stitching/Shielding** — Ground via array generation along traces and lines
+- **Advanced DFM** — Acid trap detection, solder mask sliver checks
 
 ## Architecture Overview
 

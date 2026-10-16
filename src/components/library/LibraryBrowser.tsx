@@ -168,7 +168,6 @@ export function LibraryBrowser() {
   const handleCreateComponent = async () => {
     if (!newCompName.trim()) { toast.error("Component name required"); return; }
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
       const id = await invoke<string>("create_component", {
         name: newCompName.trim(),
         description: "",
@@ -285,7 +284,7 @@ export function LibraryBrowser() {
           <CategoryTree
             categories={categories}
             selected={selectedCategory}
-            onSelect={(name) => setCategory(name)}
+            onSelect={(categoryId) => setCategory(categoryId)}
           />
         </div>
       </div>

@@ -12,6 +12,7 @@ use crate::undo::command::*;
 use crate::engine::impedance;
 use crate::engine::tuning;
 use crate::engine::stitching;
+use crate::engine::si::{self, SiResult, CrosstalkResult, EyeDiagramResult, ReflectionResult, TransmissionLineResult};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Model3DData {
@@ -58,8 +59,16 @@ pub fn get_3d_model_data(path: String) -> Result<Model3DData, String> {
     match ext.as_str() {
         "stl" => parse_stl(&data),
         "obj" => parse_obj(&data),
+        "gltf" | "glb" => parse_gltf(&data, &ext),
         _ => Err(format!("Unsupported 3D model format: .{}", ext)),
     }
+}
+
+fn parse_gltf(_data: &[u8], ext: &str) -> Result<Model3DData, String> {
+    // For now, return an error - GLTF/GLB support requires more complex buffer handling
+    // The gltf crate API requires more complex buffer handling for embedded data
+    // This is a placeholder for future implementation
+    Err(format!("GLTF/GLB format not yet fully supported: .{}", ext))
 }
 
 fn parse_stl(data: &[u8]) -> Result<Model3DData, String> {
@@ -280,6 +289,11 @@ pub fn route_trace(
 ) -> Result<TraceId, String> {
     let mut board = state.board.write();
 
+    if width < board.design_rules.min_trace_width {
+        return Err(format!("Trace width {:.3}mm is below minimum {:.3}mm",
+            width, board.design_rules.min_trace_width));
+    }
+
     // Use the push-and-shove engine to resolve conflicts with existing traces
     let adjusted_points = crate::engine::shove::resolve_conflicts(
         &points, width, board.design_rules.min_clearance,
@@ -291,6 +305,7 @@ pub fn route_trace(
         layer,
         width,
         points: adjusted_points,
+        attenuation_db_per_m: 0.0,
     };
     let id = TraceId(board.traces.insert(trace));
     Ok(id)
@@ -463,6 +478,9 @@ pub fn route_bus(
     if net_ids.len() != start_points.len() || net_ids.len() != end_points.len() {
         return Err("Mismatched net/point count for bus routing".to_string());
     }
+    if net_ids.is_empty() {
+        return Err("No nets provided for bus routing".to_string());
+    }
     let mut board = state.board.write();
     let mut ids = Vec::new();
     let count = net_ids.len();
@@ -484,6 +502,7 @@ pub fn route_bus(
             layer,
             width,
             points: vec![adjusted_start, adjusted_end],
+            attenuation_db_per_m: 0.0,
         };
         ids.push(TraceId(board.traces.insert(trace)));
     }
@@ -498,10 +517,117 @@ pub fn apply_length_tuning(
     extra_length: f64,
 ) -> Result<(), String> {
     let mut board = state.board.write();
-    if let Some(t) = board.traces.get_mut(trace_index) {
-        let tuned = tuning::apply_tuning(t, segment_index, extra_length);
-        *t = tuned;
+    let t = board.traces.get_mut(trace_index)
+        .ok_or_else(|| format!("Trace {} not found", trace_index))?;
+    let tuned = tuning::apply_tuning(t, segment_index, extra_length);
+    *t = tuned;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn analyze_signal_integrity(
+    state: State<AppState>,
+    trace_index: Option<usize>,
+) -> Result<Vec<SiResult>, String> {
+    let board = state.board.read();
+    match trace_index {
+        Some(idx) => {
+            let trace = board.traces.get(idx).ok_or("Trace not found")?;
+            Ok(vec![si::analyze_trace(trace, &board.layers, &board)])
+        }
+        None => Ok(si::analyze_board_si(&board)),
     }
+}
+
+#[tauri::command]
+pub fn analyze_crosstalk(state: State<AppState>) -> Result<Vec<CrosstalkResult>, String> {
+    let board = state.board.read();
+    Ok(si::analyze_crosstalk(&board))
+}
+
+#[tauri::command]
+pub fn generate_eye_diagram(
+    state: State<AppState>,
+    trace_index: usize,
+    bit_rate_gbps: Option<f64>,
+) -> Result<EyeDiagramResult, String> {
+    let board = state.board.read();
+    let trace = board.traces.get(trace_index).ok_or("Trace not found")?;
+    let bit_rate = bit_rate_gbps.unwrap_or(5.0);
+    Ok(si::generate_eye_diagram(trace, &board.layers, bit_rate, 100))
+}
+
+#[tauri::command]
+pub fn simulate_reflections(
+    state: State<AppState>,
+    trace_index: usize,
+    source_impedance_ohms: Option<f64>,
+    load_impedance_ohms: Option<f64>,
+    source_voltage_v: Option<f64>,
+    rise_time_ps: Option<f64>,
+    simulation_time_ps: Option<f64>,
+) -> Result<ReflectionResult, String> {
+    let board = state.board.read();
+    let trace = board.traces.get(trace_index).ok_or("Trace not found")?;
+    Ok(si::simulate_reflections(
+        trace,
+        &board.layers,
+        source_impedance_ohms.unwrap_or(50.0),
+        load_impedance_ohms.unwrap_or(50.0),
+        source_voltage_v.unwrap_or(1.0),
+        rise_time_ps.unwrap_or(100.0),
+        simulation_time_ps.unwrap_or(10000.0),
+    ))
+}
+
+#[tauri::command]
+pub fn analyze_transmission_line(
+    state: State<AppState>,
+    trace_index: usize,
+    max_freq_ghz: Option<f64>,
+    num_points: Option<usize>,
+) -> Result<TransmissionLineResult, String> {
+    let board = state.board.read();
+    let trace = board.traces.get(trace_index).ok_or("Trace not found")?;
+    Ok(si::analyze_transmission_line(
+        trace,
+        &board.layers,
+        max_freq_ghz.unwrap_or(20.0),
+        num_points.unwrap_or(100),
+    ))
+}
+
+#[tauri::command]
+pub fn add_flex_zone(
+    state: State<AppState>,
+    name: String,
+    region: Vec<Point>,
+    bend_radius_mm: f64,
+    num_bends: u32,
+) -> Result<(), String> {
+    let mut board = state.board.write();
+    board.flex_zones.push(FlexZone {
+        name,
+        region,
+        bend_radius_mm,
+        num_bends,
+        layer_keepout: vec![],
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn list_flex_zones(state: State<AppState>) -> Result<Vec<FlexZone>, String> {
+    Ok(state.board.read().flex_zones.clone())
+}
+
+#[tauri::command]
+pub fn delete_flex_zone(state: State<AppState>, index: usize) -> Result<(), String> {
+    let mut board = state.board.write();
+    if index >= board.flex_zones.len() {
+        return Err(format!("Flex zone {} not found", index));
+    }
+    board.flex_zones.remove(index);
     Ok(())
 }
 
@@ -543,7 +669,7 @@ pub fn stitch_via_shield(
         (t, board.design_rules.default_via_diameter, board.design_rules.default_via_drill)
     };
     let mut board = state.board.write();
-    let net_id = trace.net_id.unwrap_or(NetId(0));
+    let net_id = trace.net_id.ok_or_else(|| "Trace must have a net assigned for via shielding".to_string())?;
     let ids = stitching::stitch_via_shield(
         &mut board, &trace.points, net_id, spacing, offset,
         via_diameter, via_drill,
@@ -635,6 +761,7 @@ pub fn route_diff_pair(
             Point::new(mid_points[0].x + nx, mid_points[0].y + ny),
             Point::new(mid_points[1].x + nx, mid_points[1].y + ny),
         ],
+        attenuation_db_per_m: 0.0,
     };
     let n_trace = Trace {
         net_id: Some(pair.n_net),
@@ -644,6 +771,7 @@ pub fn route_diff_pair(
             Point::new(mid_points[0].x - nx, mid_points[0].y - ny),
             Point::new(mid_points[1].x - nx, mid_points[1].y - ny),
         ],
+        attenuation_db_per_m: 0.0,
     };
 
     let p_id = TraceId(board.traces.insert(p_trace));
@@ -667,4 +795,150 @@ pub fn draw_zone(
     };
     let id = ZoneId(board.zones.insert(zone));
     Ok(id)
+}
+
+#[tauri::command]
+pub fn export_step(
+    state: State<AppState>,
+    path: String,
+) -> Result<(), String> {
+    let board = state.board.read();
+    let step_content = generate_step_file(&board)?;
+    std::fs::write(&path, step_content)
+        .map_err(|e| format!("Failed to write STEP file: {}", e))?;
+    Ok(())
+}
+
+fn generate_step_file(board: &PcbBoard) -> Result<String, String> {
+    let mut step = String::new();
+    
+    // STEP file header
+    step.push_str("ISO-10303-21;\n");
+    step.push_str("HEADER;\n");
+    step.push_str("FILE_DESCRIPTION(('TraceCraft PCB'), '2;1');\n");
+    step.push_str("FILE_NAME('pcb.step', '");
+    step.push_str(&chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string());
+    step.push_str("', ('TraceCraft'), (''), 'TraceCraft', 'TraceCraft', '');\n");
+    step.push_str("FILE_SCHEMA(('CONFIG_CONTROL_DESIGN'));\n");
+    step.push_str("ENDSEC;\n");
+    step.push_str("DATA;\n");
+    
+    let mut entity_id = 1;
+    let mut entities = Vec::new();
+    
+    // Get board bounds for scaling
+    let (width, height) = match &board.outline {
+        Some(outline) if !outline.shape.is_empty() && outline.shape[0].len() >= 2 => {
+            let pts = &outline.shape[0];
+            let xs: Vec<f64> = pts.iter().map(|p| p.x).collect();
+            let ys: Vec<f64> = pts.iter().map(|p| p.y).collect();
+            let w = xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max) - xs.iter().cloned().fold(f64::INFINITY, f64::min);
+            let h = ys.iter().cloned().fold(f64::NEG_INFINITY, f64::max) - ys.iter().cloned().fold(f64::INFINITY, f64::min);
+            (w.abs(), h.abs())
+        }
+        _ => (100.0, 80.0),
+    };
+    
+    // Board substrate as a solid box
+    let substrate_id = entity_id;
+    entity_id += 1;
+    let half_w = width / 2.0;
+    let half_h = height / 2.0;
+    entities.push(format!(
+        "#{} = CARTESIAN_POINT('', ({}, {}, -0.8));",
+        substrate_id, -half_w, -half_h
+    ));
+    entity_id += 1;
+    entities.push(format!(
+        "#{} = CARTESIAN_POINT('', ({}, {}, -0.8));",
+        substrate_id + 1, half_w, -half_h
+    ));
+    entity_id += 1;
+    entities.push(format!(
+        "#{} = CARTESIAN_POINT('', ({}, {}, -0.8));",
+        substrate_id + 2, half_w, half_h
+    ));
+    entity_id += 1;
+    entities.push(format!(
+        "#{} = CARTESIAN_POINT('', ({}, {}, -0.8));",
+        substrate_id + 3, -half_w, half_h
+    ));
+    entity_id += 1;
+    // ... simplified - just create a basic block for the substrate
+    entities.push(format!(
+        "#{} = BLOCK('', #{} , {}, {}, 1.6);",
+        entity_id, substrate_id, width, height
+    ));
+    entity_id += 1;
+    
+    // Traces as thin blocks
+    for (_, trace) in board.traces.iter() {
+        if trace.points.len() < 2 { continue; }
+        for j in 0..trace.points.len() - 1 {
+            let p1 = &trace.points[j];
+            let p2 = &trace.points[j + 1];
+            let dx = p2.x - p1.x;
+            let dy = p2.y - p1.y;
+            let len = (dx * dx + dy * dy).sqrt();
+            if len < 0.01 { continue; }
+            
+            let trace_id = entity_id;
+            entity_id += 1;
+            let cx = (p1.x + p2.x) / 2.0;
+            let cy = (p1.y + p2.y) / 2.0;
+            entities.push(format!(
+                "#{} = CARTESIAN_POINT('', ({}, {}, 0.01));",
+                trace_id, cx - len/2.0, cy - trace.width/2.0
+            ));
+            entity_id += 1;
+            entities.push(format!(
+                "#{} = BLOCK('', #{} , {}, {}, 0.035);",
+                entity_id, trace_id, len, trace.width
+            ));
+            entity_id += 1;
+        }
+    }
+    
+    // Vias as cylinders (approximated as blocks)
+    for (_, via) in board.vias.iter() {
+        let via_id = entity_id;
+        entity_id += 1;
+        entities.push(format!(
+            "#{} = CARTESIAN_POINT('', ({}, {}, 0.0));",
+            via_id, via.position.x, via.position.y
+        ));
+        entity_id += 1;
+        entities.push(format!(
+            "#{} = BLOCK('', #{} , {}, {}, 1.6);",
+            entity_id, via_id, via.diameter, via.diameter
+        ));
+        entity_id += 1;
+    }
+    
+    // Footprints as blocks
+    for (_, fp) in board.footprints.iter() {
+        let fp_id = entity_id;
+        entity_id += 1;
+        entities.push(format!(
+            "#{} = CARTESIAN_POINT('', ({}, {}, 0.0));",
+            fp_id, fp.position.x, fp.position.y
+        ));
+        entity_id += 1;
+        entities.push(format!(
+            "#{} = BLOCK('', #{} , 8.0, 6.0, 2.0);",
+            entity_id, fp_id
+        ));
+        entity_id += 1;
+    }
+    
+    // Write entities
+    for e in entities {
+        step.push_str(&e);
+        step.push_str(";\n");
+    }
+    
+    step.push_str("ENDSEC;\n");
+    step.push_str("END-ISO-10303-21;\n");
+    
+    Ok(step)
 }

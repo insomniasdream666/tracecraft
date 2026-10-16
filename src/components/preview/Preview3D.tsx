@@ -3,6 +3,7 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Grid, PerspectiveCamera, Line as DreiLine, Text } from "@react-three/drei";
 import { usePCBStore } from "../../stores/pcbStore";
 import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import { Model3D } from "../../types/library";
 import { ModelLoader } from "./ModelLoader";
 import * as THREE from "three";
@@ -127,6 +128,24 @@ export const Preview3D = React.memo(function Preview3D() {
   const [showSilkscreen, setShowSilkscreen] = useState(true);
   const [measuring, setMeasuring] = useState(false);
   const [measurePoints, setMeasurePoints] = useState<THREE.Vector3[]>([]);
+  const [exporting, setExporting] = useState(false);
+
+  const exportSTEP = async () => {
+    setExporting(true);
+    try {
+      const path = await save({
+        filters: [{ name: "STEP File", extensions: ["step", "stp"] }],
+        defaultPath: "pcb.step",
+      });
+      if (path) {
+        await invoke("export_step", { path });
+        alert("STEP export complete!");
+      }
+    } catch (e: any) {
+      alert(`Export failed: ${e}`);
+    }
+    setExporting(false);
+  };
 
   return (
     <div className="w-full h-full bg-bg-canvas relative">
@@ -144,6 +163,13 @@ export const Preview3D = React.memo(function Preview3D() {
           className={`px-2 py-1 text-xs rounded ${measuring ? 'bg-accent text-white' : 'bg-bg-surface border border-border text-text'}`}
         >
           {measuring ? "Measuring..." : "Measure"}
+        </button>
+        <button
+          onClick={exportSTEP}
+          disabled={exporting}
+          className="px-2 py-1 text-xs rounded bg-copper/20 border border-copper/30 text-copper hover:bg-copper/30 disabled:opacity-50"
+        >
+          {exporting ? "Exporting..." : "Export STEP"}
         </button>
       </div>
       <Canvas shadows onPointerDown={(e: any) => {

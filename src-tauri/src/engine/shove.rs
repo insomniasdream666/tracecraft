@@ -57,8 +57,10 @@ pub fn resolve_conflicts(
                     any_push = true;
 
                     // Also shove the new trace away slightly for visual clearance
+                    let push_back = Point::new(-push.x * 0.3, -push.y * 0.3);
+                    adjusted[i].x += push_back.x;
+                    adjusted[i].y += push_back.y;
                     if i + 1 < adjusted.len() {
-                        let push_back = Point::new(-push.x * 0.3, -push.y * 0.3);
                         adjusted[i + 1].x += push_back.x;
                         adjusted[i + 1].y += push_back.y;
                     }
@@ -186,6 +188,7 @@ mod tests {
             layer: LayerId(1),
             width: 0.2,
             points: vec![Point::new(5.0, 5.0), Point::new(5.0, -5.0)],
+            attenuation_db_per_m: 0.0,
         };
         board.traces.insert(existing);
 

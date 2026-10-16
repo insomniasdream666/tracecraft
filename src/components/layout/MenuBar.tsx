@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 import { useProjectStore } from "../../stores/projectStore";
 import { useLibraryStore } from "../../stores/libraryStore";
 import { useSchematicStore } from "../../stores/schematicStore";
@@ -226,7 +227,6 @@ export function MenuBar() {
             const { mode, canvasApi } = useUIStore.getState();
             if (!canvasApi) return;
             try {
-              const { invoke } = await import("@tauri-apps/api/core");
               if (mode === "pcb") {
                 const bounds = await invoke<any>("get_board_bounds");
                 canvasApi.zoomToBounds(bounds);

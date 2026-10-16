@@ -165,13 +165,13 @@ mod tests {
     #[test]
     fn test_duplicate_refdes() {
         let mut symbols = Arena::new();
-        let id1 = symbols.insert(SymbolInstance {
+        let _id1 = symbols.insert(SymbolInstance {
             component_id: ComponentId(uuid::Uuid::new_v4()),
             position: Point::new(0.0, 0.0),
             rotation: Rotation(0.0), mirrored: false,
             refdes: "R1".into(), value: "".into(),
         });
-        let id2 = symbols.insert(SymbolInstance {
+        let _id2 = symbols.insert(SymbolInstance {
             component_id: ComponentId(uuid::Uuid::new_v4()),
             position: Point::new(100.0, 100.0),
             rotation: Rotation(0.0), mirrored: false,

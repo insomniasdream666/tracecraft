@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Library, Box, Layers, Sparkles, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { Library, Box, Layers, Sparkles, PanelRightClose, PanelRightOpen, Activity, FoldVertical, Zap, GitBranch, Braces, Shield } from "lucide-react";
 import { useUIStore } from "../../stores/uiStore";
 import { usePCBStore } from "../../stores/pcbStore";
 import { LibraryBrowser } from "../library/LibraryBrowser";
@@ -8,17 +8,31 @@ import { PropertyPanel } from "../common/PropertyPanel";
 import { AIPanel } from "../ai/AIPanel";
 import { LayerPanel } from "../pcb/LayerPanel";
 import { BoardProperties } from "../pcb/BoardProperties";
+import { SIPanel } from "../pcb/SIPanel";
+import { FlexZonePanel } from "../pcb/FlexZonePanel";
+import { ImpedancePanel } from "../pcb/ImpedancePanel";
+import { LengthTuningPanel } from "../pcb/LengthTuningPanel";
+import { BusRoutePanel } from "../pcb/BusRoutePanel";
+import { ViaStitchPanel } from "../pcb/ViaStitchPanel";
+import { StackupVisualizer } from "../pcb/StackupVisualizer";
 
 const tabs = [
   { id: "properties" as const, icon: <Box size={16} />, label: "Properties" },
   { id: "library" as const, icon: <Library size={16} />, label: "Library" },
   { id: "layers" as const, icon: <Layers size={16} />, label: "Layers" },
   { id: "ai" as const, icon: <Sparkles size={16} />, label: "AI" },
+  { id: "si" as const, icon: <Activity size={16} />, label: "SI" },
+  { id: "flex" as const, icon: <FoldVertical size={16} />, label: "Flex" },
+  { id: "impedance" as const, icon: <Zap size={16} />, label: "Z₀" },
+  { id: "tuning" as const, icon: <Braces size={16} />, label: "Tune" },
+  { id: "bus" as const, icon: <GitBranch size={16} />, label: "Bus" },
+  { id: "stitch" as const, icon: <Shield size={16} />, label: "Stitch" },
+  { id: "stackup" as const, icon: <Layers size={16} />, label: "Stackup" },
 ];
 
 export function Sidebar() {
   const { sidebarTab, setSidebarTab, sidebarOpen, toggleSidebar, mode } = useUIStore();
-  const { board, selectedIds } = usePCBStore();
+  const { board, selectedIds, loadBoard } = usePCBStore();
 
   const selectedProps = useMemo(() => {
     if (mode !== "pcb" || !board || selectedIds.size !== 1) return null;
@@ -201,6 +215,13 @@ export function Sidebar() {
         {sidebarTab === "library" && <LibraryBrowser />}
         {sidebarTab === "layers" && <LayerPanel />}
         {sidebarTab === "ai" && <AIPanel />}
+        {sidebarTab === "si" && mode === "pcb" && <SIPanel />}
+        {sidebarTab === "flex" && mode === "pcb" && <FlexZonePanel />}
+        {sidebarTab === "impedance" && mode === "pcb" && <ImpedancePanel />}
+        {sidebarTab === "tuning" && mode === "pcb" && <LengthTuningPanel />}
+        {sidebarTab === "bus" && mode === "pcb" && <BusRoutePanel />}
+        {sidebarTab === "stitch" && mode === "pcb" && <ViaStitchPanel />}
+        {sidebarTab === "stackup" && mode === "pcb" && <StackupVisualizer initialStackup={board?.layers || null} onSave={async (s) => { try { await invoke("set_stackup", { stackup: s }); await loadBoard(); } catch {} }} />}
       </div>
     </div>
   );

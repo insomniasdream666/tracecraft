@@ -1,16 +1,19 @@
-import React from "react";
+import { lazy, Suspense } from "react";
 import { Toolbar } from "./Toolbar";
 import { Sidebar } from "./Sidebar";
 import { StatusBar } from "./StatusBar";
 import { SchematicCanvas } from "../schematic/SchematicCanvas";
 import { PcbCanvas } from "../pcb/PcbCanvas";
-import { Preview3D } from "../preview/Preview3D";
 import { WelcomeScreen } from "../common/WelcomeScreen";
 import { ToastSetup } from "../common/Toast";
 import { ErrorBoundary } from "../common/ErrorBoundary";
 import { MenuBar } from "./MenuBar";
 import { useUIStore } from "../../stores/uiStore";
 import { useProjectStore } from "../../stores/projectStore";
+
+const Preview3D = lazy(() =>
+  import("../preview/Preview3D").then((module) => ({ default: module.Preview3D }))
+);
 
 export function AppShell() {
   const { mode } = useUIStore();
@@ -24,7 +27,11 @@ export function AppShell() {
       case "pcb":
         return <PcbCanvas key={projectKey} />;
       case "preview":
-        return <Preview3D key={projectKey} />;
+        return (
+          <Suspense fallback={<div className="h-full flex items-center justify-center text-text-muted">Loading 3D preview...</div>}>
+            <Preview3D key={projectKey} />
+          </Suspense>
+        );
       default:
         return null;
     }

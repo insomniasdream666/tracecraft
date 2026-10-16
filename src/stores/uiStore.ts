@@ -14,7 +14,7 @@ interface UIState {
   activeTool: ToolType;
   zoom: number;
   panOffset: Point;
-  sidebarTab: "properties" | "library" | "layers" | "ai";
+  sidebarTab: "properties" | "library" | "layers" | "ai" | "si" | "flex" | "impedance" | "tuning" | "bus" | "stitch" | "stackup";
   sidebarOpen: boolean;
   setMode: (mode: AppMode) => void;
   setTool: (tool: ToolType) => void;

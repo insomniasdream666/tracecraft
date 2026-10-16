@@ -173,3 +173,39 @@ pub fn export_spice_netlist(state: State<AppState>, path: String) -> Result<(), 
     crate::io::spice::export_spice(sheet, &path, &params)?;
     Ok(())
 }
+
+#[tauri::command]
+pub fn run_spice_simulation(_state: State<AppState>, netlist_path: String, analysis_type: Option<String>) -> Result<String, String> {
+    run_ngspice(&netlist_path, analysis_type.unwrap_or_else(|| "tran".to_string()))
+}
+
+fn run_ngspice(netlist_path: &str, analysis_type: String) -> Result<String, String> {
+    let analysis = analysis_type.trim().to_ascii_lowercase();
+    if !matches!(analysis.as_str(), "tran" | "ac" | "dc" | "op") {
+        return Err(format!("Unsupported SPICE analysis type: {}", analysis_type));
+    }
+
+    // Check if ngspice is available
+    let output = std::process::Command::new("ngspice")
+        .args(["-b", "-r", "raw", netlist_path])
+        .output()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                "ngspice not found. Install ngspice to run simulations. On Ubuntu: sudo apt install ngspice".to_string()
+            } else {
+                format!("Failed to execute ngspice: {}", e)
+            }
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ngspice failed: {}", stderr));
+    }
+
+    // Read the raw output file
+    let raw_path = format!("{}.raw", netlist_path.strip_suffix(".cir").unwrap_or(netlist_path));
+    let raw_data = std::fs::read_to_string(&raw_path)
+        .unwrap_or_else(|_| String::from_utf8_lossy(&output.stdout).to_string());
+
+    Ok(raw_data)
+}

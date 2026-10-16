@@ -46,7 +46,7 @@ pub fn generate_serpentine(
     points.push(start);
 
     let total_extra = segments as f64 * tooth_extra;
-    let total_along = seg_len - total_extra * 0.1; // slightly pull ends together
+    let total_along = (seg_len - total_extra * 0.1).max(seg_len * 0.1); // pull ends together, min 10% of seg_len
     let along_step = total_along / segments as f64;
 
     for i in 0..segments {
@@ -123,6 +123,7 @@ mod tests {
                 Point::new(10.0, 0.0),
                 Point::new(20.0, 0.0),
             ],
+            attenuation_db_per_m: 0.0,
         };
         let tuned = apply_tuning(&trace, 0, 5.0);
         assert!(tuned.points.len() > trace.points.len());

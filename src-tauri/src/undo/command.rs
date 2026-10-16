@@ -125,6 +125,7 @@ impl Command for RouteTraceCmd {
             layer: self.layer,
             width: self.width,
             points: self.points.clone(),
+            attenuation_db_per_m: 0.0,
         });
         self.result_id = Some(TraceId(id));
         Ok(())
