@@ -57,6 +57,7 @@ export interface FootprintInstance {
   rotation: Rotation;
   mirrored: boolean;
   refdes: string;
+  value?: string;
   locked: boolean;
 }
 

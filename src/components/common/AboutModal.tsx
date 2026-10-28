@@ -1,5 +1,6 @@
 import React from "react";
 import { X, CircuitBoard } from "lucide-react";
+import { APP_VERSION } from "../../lib/constants";
 
 interface Props {
   onClose: () => void;
@@ -22,13 +23,13 @@ export function AboutModal({ onClose }: Props) {
           <CircuitBoard size={32} className="text-white" />
         </div>
         <h2 className="text-lg font-bold text-text-primary">TraceCraft</h2>
-        <p className="text-xs text-text-muted mt-1">v0.1.0</p>
+        <p className="text-xs text-text-muted mt-1">v{APP_VERSION}</p>
         <p className="text-xs text-text-secondary mt-3 leading-relaxed">
           AI-assisted PCB design tool built with Tauri, React, and Rust.
         </p>
         <div className="mt-4 pt-4 border-t border-border text-[10px] text-text-muted">
           <p>Local-first. No cloud accounts required.</p>
-          <p className="mt-1">KiCad-compatible schematic and PCB format.</p>
+          <p className="mt-1">KiCad schematic and PCB import/export (basic subset).</p>
         </div>
       </div>
     </div>

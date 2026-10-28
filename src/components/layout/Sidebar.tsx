@@ -1,6 +1,6 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Library, Box, Layers, Sparkles, PanelRightClose, PanelRightOpen, Activity, FoldVertical, Zap, GitBranch, Braces, Shield } from "lucide-react";
+import { Library, Box, Layers, Sparkles, PanelRightClose, PanelRightOpen, Activity, FoldVertical, Zap, GitBranch, Braces, Shield, FlaskConical } from "lucide-react";
 import { useUIStore } from "../../stores/uiStore";
 import { usePCBStore } from "../../stores/pcbStore";
 import { LibraryBrowser } from "../library/LibraryBrowser";
@@ -15,23 +15,36 @@ import { LengthTuningPanel } from "../pcb/LengthTuningPanel";
 import { BusRoutePanel } from "../pcb/BusRoutePanel";
 import { ViaStitchPanel } from "../pcb/ViaStitchPanel";
 import { StackupVisualizer } from "../pcb/StackupVisualizer";
+import { SimulationPanel } from "../schematic/SimulationPanel";
 
 const tabs = [
   { id: "properties" as const, icon: <Box size={16} />, label: "Properties" },
   { id: "library" as const, icon: <Library size={16} />, label: "Library" },
   { id: "layers" as const, icon: <Layers size={16} />, label: "Layers" },
   { id: "ai" as const, icon: <Sparkles size={16} />, label: "AI" },
-  { id: "si" as const, icon: <Activity size={16} />, label: "SI" },
-  { id: "flex" as const, icon: <FoldVertical size={16} />, label: "Flex" },
-  { id: "impedance" as const, icon: <Zap size={16} />, label: "Z₀" },
-  { id: "tuning" as const, icon: <Braces size={16} />, label: "Tune" },
-  { id: "bus" as const, icon: <GitBranch size={16} />, label: "Bus" },
-  { id: "stitch" as const, icon: <Shield size={16} />, label: "Stitch" },
-  { id: "stackup" as const, icon: <Layers size={16} />, label: "Stackup" },
+  { id: "si" as const, icon: <Activity size={16} />, label: "SI" , mode: "pcb" as const },
+  { id: "flex" as const, icon: <FoldVertical size={16} />, label: "Flex" , mode: "pcb" as const },
+  { id: "impedance" as const, icon: <Zap size={16} />, label: "Z₀" , mode: "pcb" as const },
+  { id: "tuning" as const, icon: <Braces size={16} />, label: "Tune" , mode: "pcb" as const },
+  { id: "bus" as const, icon: <GitBranch size={16} />, label: "Bus" , mode: "pcb" as const },
+  { id: "stitch" as const, icon: <Shield size={16} />, label: "Stitch" , mode: "pcb" as const },
+  { id: "stackup" as const, icon: <Layers size={16} />, label: "Stackup", mode: "pcb" as const },
+  { id: "sim" as const, icon: <FlaskConical size={16} />, label: "Sim", mode: "schematic" as const },
 ];
 
 export function Sidebar() {
   const { sidebarTab, setSidebarTab, sidebarOpen, toggleSidebar, mode } = useUIStore();
+
+  const visibleTabs = useMemo(
+    () => tabs.filter((tab) => !("mode" in tab) || tab.mode === mode),
+    [mode],
+  );
+
+  useEffect(() => {
+    if (!visibleTabs.some((tab) => tab.id === sidebarTab)) {
+      setSidebarTab("properties");
+    }
+  }, [visibleTabs, sidebarTab, setSidebarTab]);
   const { board, selectedIds, loadBoard } = usePCBStore();
 
   const selectedProps = useMemo(() => {
@@ -159,7 +172,7 @@ export function Sidebar() {
         >
           <PanelRightOpen size={14} />
         </button>
-        {tabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.id}
             title={tab.label}
@@ -179,15 +192,15 @@ export function Sidebar() {
 
   return (
     <div className="w-80 bg-bg-surface border-l border-border flex flex-col transition-all duration-200">
-      <div className="flex items-center border-b border-border pr-1">
-        {tabs.map((tab) => (
+      <div className="flex flex-wrap items-center gap-0.5 border-b border-border px-1 py-1">
+        {visibleTabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setSidebarTab(tab.id)}
-            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors flex-1 justify-center
+            className={`flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded transition-colors
               ${sidebarTab === tab.id
-                ? "text-copper border-b-2 border-copper"
-                : "text-text-secondary hover:text-text-primary"
+                ? "text-copper bg-copper/10"
+                : "text-text-secondary hover:text-text-primary hover:bg-bg-elevated"
               }`}
           >
             {tab.icon}
@@ -197,7 +210,7 @@ export function Sidebar() {
         <button
           onClick={toggleSidebar}
           title="Close sidebar"
-          className="w-6 h-6 flex items-center justify-center rounded text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors ml-1"
+          className="w-6 h-6 flex items-center justify-center rounded text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors ml-auto"
         >
           <PanelRightClose size={14} />
         </button>
@@ -221,6 +234,7 @@ export function Sidebar() {
         {sidebarTab === "tuning" && mode === "pcb" && <LengthTuningPanel />}
         {sidebarTab === "bus" && mode === "pcb" && <BusRoutePanel />}
         {sidebarTab === "stitch" && mode === "pcb" && <ViaStitchPanel />}
+        {sidebarTab === "sim" && mode === "schematic" && <SimulationPanel />}
         {sidebarTab === "stackup" && mode === "pcb" && <StackupVisualizer initialStackup={board?.layers || null} onSave={async (s) => { try { await invoke("set_stackup", { stackup: s }); await loadBoard(); } catch {} }} />}
       </div>
     </div>

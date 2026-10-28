@@ -74,13 +74,13 @@ Keyboard shortcuts: Ctrl+Z (undo), Ctrl+S (save), Delete (remove selected)`,
     title: "Export & File Operations",
     content: `TraceCraft supports several file formats:
 
-• Save/Load: Projects are saved as .tcproj files (File > Save / Ctrl+S)
-• KiCad Export: Export schematics as .kicad_sch and PCBs as .kicad_pcb for KiCad interop
+• Save/Load: Projects are saved as .tcproj files (JSON; File > Save / Ctrl+S)
+• KiCad Export: Export schematics as .kicad_sch and PCBs as .kicad_pcb (minimal interop)
 • KiCad Import: Open existing KiCad schematics and PCB files
-• Gerber Export: Generate RS-274X Gerber files for PCB fabrication (one file per layer)
-• IPC-2581: Export to the industry-standard IPC-2581 format
-• BOM Export: Generate Bill of Materials as CSV or XLSX
-• Image Export: Export schematics as PNG or SVG`,
+• Gerber Export: Generate a single RS-274X copper file (traces and zones; no pads or drill data yet)
+• IPC-2581: Export a basic IPC-2581 XML document
+• BOM Export: Generate a Bill of Materials CSV
+• Image Export: Export the schematic canvas as PNG`,
   },
   {
     id: "shortcuts",

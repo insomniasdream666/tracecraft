@@ -132,6 +132,7 @@ pub fn run() {
             commands::project::export_cpl,
             commands::project::export_spice_netlist,
             commands::project::run_spice_simulation,
+            commands::project::simulate_schematic,
             commands::pcb::export_step,
             commands::library_download::download_kicad_libraries,
         ])

@@ -54,6 +54,8 @@ pub struct FootprintInstance {
     pub rotation: Rotation,
     pub mirrored: bool,
     pub refdes: String,
+    #[serde(default)]
+    pub value: String,
     pub locked: bool,
 }
 

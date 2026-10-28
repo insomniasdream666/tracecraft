@@ -127,15 +127,17 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const canvasApi = useUIStore.getState().canvasApi;
-      if (!canvasApi || !("stageRef" in canvasApi)) { throw new Error("Canvas not ready"); }
-      const stage = (canvasApi as any).stageRef;
-      if (!stage) throw new Error("Stage not available");
-      const dataUrl = stage.toDataURL({ pixelRatio: 2 });
+      if (!canvasApi?.exportPng) { throw new Error("Canvas not ready"); }
+      const dataUrl = canvasApi.exportPng();
+      if (!dataUrl) throw new Error("Stage not available");
       const base64 = dataUrl.replace(/^data:image\/png;base64,/, "");
       const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
       await writeFile(path, bytes);
       set({ loading: false });
     }
-    catch (e) { set({ error: String(e), loading: false }); }
+    catch (e) {
+      set({ error: String(e), loading: false });
+      throw e;
+    }
   },
 }));

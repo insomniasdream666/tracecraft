@@ -1,15 +1,21 @@
 # TraceCraft — Task Breakdown
 
-> **Total Tasks:** 76
-> **Phases:** 8
-> **Estimated Duration:** 20 weeks (solo)
+> **Total Tasks:** 83 (Tasks 77–83 were added after the original plan)
+> **Phases:** 9
+> **Estimated Duration:** 20 weeks (solo, original estimate)
+>
+> **Last verified:** 2026-10-28 against the packaged v0.2.0 `.deb` (WebDriver) and
+> AppImage (launch check): schematic place/wire/annotate/ERC, ngspice transient run,
+> project save/close/reopen, PCB netlist sync/place/route/via/DRC, Gerber/BOM/CPL/SPICE/
+> STEP/KiCad exports, and canvas PNG generation.
 
 Each task is self-contained, ordered by strict dependency, and completable by a
 coding agent in a single session. Tasks specify exactly which files to create or
 modify.
 
 **Legend:** `[C]` = Create file, `[M]` = Modify file, `[R]` = Run command  
-**Status:** `[x]` = Complete, `[~]` = Partial, (blank) = Not started
+**Status:** `[x]` = Complete and smoke-tested, `[~]` = Partial/approximate or not yet
+verified end-to-end, `[ ]` = Not implemented
 
 ---
 
@@ -590,15 +596,19 @@ for runtime validation of IPC responses.
   - Pad property editing (number, shape, size, layer)
   - Outline drawing (board outline + courtyard)
   - Import from KiCad footprint data
-  - 3D model association (file picker for .step/.wrl)
+  - 3D model association (file picker for STL/OBJ/GLTF/GLB)
 
 **Verification:** Create footprint with pads, saved and reloaded correctly.
 
 ---
 
-### Task 20: KiCad Library Import
+### [x] Task 20: KiCad Library Import
 
 **Goal:** Import KiCad symbols and footprints into the local database.
+
+**As-built:** `.kicad_sym`, `.pretty` and CSV BOM import are implemented, along with the
+in-app official KiCad library download. Fidelity depends on the source constructs the
+S-expression parser supports.
 
 **Files:**
 - `[C] tracecraft/src-tauri/src/io/kicad_sch.rs`:
@@ -855,9 +865,13 @@ Connectors, Power, RF, Sensors, Electromechanical, Miscellaneous
 
 ---
 
-### Task 33: KiCad Schematic Import
+### [~] Task 33: KiCad Schematic Import
 
 **Goal:** Open `.kicad_sch` files in TraceCraft.
+
+**As-built:** Basic symbols, wires, labels and sheets are mapped into the internal model.
+Full KiCad 7/8 fidelity (embedded library symbols, complex graphics, buses) is not
+guaranteed.
 
 **Files:**
 - `[M] tracecraft/src-tauri/src/io/kicad_sch.rs` — Extend to parse full schematic
@@ -871,9 +885,13 @@ Connectors, Power, RF, Sensors, Electromechanical, Miscellaneous
 
 ---
 
-### Task 34: KiCad Schematic Export
+### [~] Task 34: KiCad Schematic Export
 
 **Goal:** Save TraceCraft schematics as `.kicad_sch` for KiCad interop.
+
+**As-built:** Headers, symbols (reference/value), wires and net labels are written. Library
+symbol definitions and pin data are not embedded, so KiCad needs the referenced libraries
+to render the file properly. Not a full round-trip.
 
 **Files:**
 - `[M] tracecraft/src-tauri/src/io/kicad_sch.rs` — Add `export_schematic` function:
@@ -901,9 +919,13 @@ Connectors, Power, RF, Sensors, Electromechanical, Miscellaneous
 
 ---
 
-### Task 36: Schematic — Print & Export Image
+### [~] Task 36: Schematic — Print & Export Image
 
 **Goal:** Export schematic as PNG/SVG/PDF.
+
+**As-built:** PNG only, rendered from the Konva stage at 2× pixel ratio. SVG and PDF are
+not implemented. The canvas API now exposes the stage; before the smoke-test fix the
+action failed silently.
 
 **Files:**
 - `[M] tracecraft/src-tauri/src/commands/schematic.rs` — Add `export_schematic_image`:
@@ -929,9 +951,12 @@ Connectors, Power, RF, Sensors, Electromechanical, Miscellaneous
 
 ---
 
-### Task 38: Schematic — Polish & Performance
+### [~] Task 38: Schematic — Polish & Performance
 
 **Goal:** Smooth interaction, loading states, error boundaries.
+
+**As-built:** Basic loading/error state exists in stores; canvas virtualization, systematic
+memoization and React error boundaries are not implemented.
 
 **Files:**
 - `[M] tracecraft/src/components/schematic/SchematicCanvas.tsx`:
@@ -1068,9 +1093,13 @@ Connectors, Power, RF, Sensors, Electromechanical, Miscellaneous
 
 ---
 
-### Task 44: Push & Shove Routing
+### [~] Task 44: Push & Shove Routing
 
 **Goal:** Existing traces move aside when new trace conflicts.
+
+**As-built:** `route_trace` calls `engine/shove.rs::resolve_conflicts`, which pushes
+existing trace points aside and smooths them. It is a single-pass geometric shove, not
+a full iterative router with rip-up/reroute.
 
 **Files:**
 - `[M] tracecraft/src-tauri/src/commands/pcb.rs` — Implement push-and-shove in Rust:
@@ -1190,9 +1219,13 @@ spokes on connected pads.
 
 ---
 
-### Task 50: Netlist Synchronization — Bidirectional
+### [~] Task 50: Netlist Synchronization — Bidirectional
 
 **Goal:** Changes in PCB can update schematic (and vice versa).
+
+**As-built:** `sync_netlist` is the primary schematic → PCB path and writes pin-level nets.
+`sync_pcb_to_schematic` only adds missing net labels for user-named nets; it does not sync
+footprint positions, values or deletions.
 
 **Files:**
 - `[M] tracecraft/src-tauri/src/engine/netlist.rs` — Add `sync_pcb_to_schematic`:
@@ -1270,9 +1303,12 @@ width → trace updates.
 
 ---
 
-### Task 55: PCB Polish & Performance
+### [~] Task 55: PCB Polish & Performance
 
 **Goal:** Smooth performance with large boards.
+
+**As-built:** No dedicated large-board profiling, culling, memoization or IPC throttling has
+been done. The smoke test used a four-component board.
 
 **Files:**
 - `[M] tracecraft/src/components/pcb/PcbCanvas.tsx`:
@@ -1353,9 +1389,13 @@ avoiding obstacles.
 
 ---
 
-### [x] Task 59: Batch Router — Route All Nets
+### [~] Task 59: Batch Router — Route All Nets
 
 **Goal:** Route all unrouted nets on the board in order.
+
+**As-built:** `autoroute_all` computes A* routes and returns them with progress events,
+but the returned traces are not inserted into the board, no vias are emitted at layer
+transitions, and no UI control invokes it yet. The verification (traces appear) is not met.
 
 **Files:**
 - `[M] tracecraft/src-tauri/src/engine/autorouter.rs` — Add `BatchRouter`:
@@ -1378,9 +1418,13 @@ avoiding obstacles.
 
 ---
 
-### [x] Task 60: Routing Commands & UI
+### [~] Task 60: Routing Commands & UI
 
 **Goal:** User control over auto-routing from the frontend.
+
+**As-built:** The `autorouteAll`/`cancelRouting` store actions invoke the commands and
+listen for progress/done events, but no toolbar or menu control calls them. Persisting the
+returned routes and a progress/cancel UI are missing.
 
 **Files:**
 - `[C] tracecraft/src-tauri/src/commands/routing.rs`:
@@ -1401,9 +1445,13 @@ avoiding obstacles.
 
 ---
 
-### Task 61: Routing — Progress & Cancellation
+### [~] Task 61: Routing — Progress & Cancellation
 
 **Goal:** Show routing progress, allow cancellation.
+
+**As-built:** `autoroute_all` emits `routing-progress`/`routing-done` and honours the
+`cancel_routing` flag. The store listens for both events, but there is no UI trigger,
+progress bar or cancel button yet.
 
 **Files:**
 - `[M] tracecraft/src-tauri/src/commands/routing.rs` — Add streaming progress via
@@ -1441,13 +1489,16 @@ avoiding obstacles.
 
 ### [~] Task 63: 3D Model Loading
 
-**Goal:** Load .step/.wrl 3D models associated with footprints.
+**Goal:** Load STL/OBJ/GLTF/GLB 3D models associated with footprints.
+
+**As-built:** `get_3d_model_data` returns positions/normals for STL, OBJ, glTF and GLB
+(embedded or external buffers). ModelLoader caches geometry and applies footprint
+position/rotation. STEP/WRL import is not implemented.
 
 **Files:**
 - `[C] tracecraft/src/components/preview/ModelLoader.tsx`:
-  - Parse .step/.wrl file to Three.js geometry (using a local conversion approach
-    or pre-converted glb)
-  - Alternative: use `three-step` library or convert step → glb via backend
+  - Parse STL/OBJ/GLTF/GLB into Three.js geometry through `get_3d_model_data`
+  - STEP import is not implemented (STEP export is)
   - Cache loaded models in memory
   - Place model at footprint position with correct rotation
 - `[M] tracecraft/src-tauri/src/commands/pcb.rs` — `get_3d_model_data` command that
@@ -1473,9 +1524,11 @@ avoiding obstacles.
 
 ---
 
-### [x] Task 65: 3D Measurement Tools
+### [~] Task 65: 3D Measurement Tools
 
 **Goal:** Measure distances and angles in the 3D viewport.
+
+**As-built:** Two-point distance measurement only; angle measurement is not implemented.
 
 **Files:**
 - `[M] tracecraft/src/components/preview/Preview3D.tsx` — Measurement mode:
@@ -1490,9 +1543,12 @@ avoiding obstacles.
 
 ## Phase 7: AI Copilot (Tasks 66–70)
 
-### [x] Task 66: ONNX Runtime Integration
+### [~] Task 66: ONNX Runtime Integration
 
 **Goal:** Load and run ONNX models for component recommendations and routing assistance.
+
+**As-built:** Not implemented. `ort` is commented out in `Cargo.toml`; AI commands use
+keyword/template heuristics instead.
 
 **Files:**
 - `[M] tracecraft/src-tauri/Cargo.toml` — Add `ort` crate
@@ -1515,9 +1571,12 @@ avoiding obstacles.
 
 ---
 
-### [x] Task 67: Component Recommendations
+### [~] Task 67: Component Recommendations
 
 **Goal:** Suggest components based on netlist context.
+
+**As-built:** Keyword matching against the local component catalog; no ONNX model,
+ranking model or netlist-aware scoring.
 
 **Files:**
 - `[C] tracecraft/src-tauri/src/ai/recommender.rs`:
@@ -1534,9 +1593,12 @@ avoiding obstacles.
 
 ---
 
-### [x] Task 68: Routing Assistance
+### [~] Task 68: Routing Assistance
 
 **Goal:** Suggest trace paths during manual routing.
+
+**As-built:** Heuristic straight-line path suggestion from the AI command; no ghost
+trace overlay, model inference or accept-with-Enter UI.
 
 **Files:**
 - `[C] tracecraft/src-tauri/src/ai/routing_assist.rs`:
@@ -1554,9 +1616,12 @@ avoiding obstacles.
 
 ---
 
-### [x] Task 69: LLM Chat for PCB Design
+### [~] Task 69: LLM Chat for PCB Design
 
 **Goal:** Natural language Q&A about PCB design.
+
+**As-built:** Template-based replies in `ai/chat.rs`; no llama.cpp binding, model file,
+streaming events or board-context inference.
 
 **Files:**
 - `[C] tracecraft/src-tauri/src/ai/chat.rs`:
@@ -1576,9 +1641,11 @@ avoiding obstacles.
 
 ---
 
-### [x] Task 70: AI — Model Download & Management
+### [~] Task 70: AI — Model Download & Management
 
 **Goal:** Download AI models on demand, show availability status.
+
+**As-built:** Not implemented; no model directory, download endpoint or availability UI.
 
 **Files:**
 - `[M] tracecraft/src-tauri/src/ai/mod.rs` — Add model download logic:
@@ -1598,119 +1665,167 @@ avoiding obstacles.
 
 ### [x] Task 71: Native .tcproj Format
 
-**Goal:** Single-file project format using SQLite.
+**As-built:** `.tcproj` is a pretty-printed JSON document containing project metadata,
+the full `PcbBoard`, and all schematic sheets. SQLite stores the component library, app
+settings and the last-project path, but not the project file itself.
 
 **Files:**
-- `[C] tracecraft/src-tauri/src/io/native.rs`:
-  - `.tcproj` is a SQLite database with tables for:
-    - `project_meta` — name, version, created/updated timestamps
-    - `schematics` — serialized JSON per sheet
-    - `board` — serialized JSON of PcbBoard
-    - `settings` — design rules, UI state
-  - `save_project(path)` — writes all current state to the SQLite file
-  - `load_project(path)` — reads SQLite file, reconstructs state
-- `[M] tracecraft/src-tauri/src/commands/project.rs` — Use native format for
-  save/open
+- `src-tauri/src/io/native.rs` — JSON save/load
+- `src-tauri/src/commands/project.rs` — create/open/save/close
 
-**Verification:** Save project → close → re-open → all state restored.
+**Verification:** Save → close → reopen restores board, sheets and metadata (smoke-tested
+against the packaged `.deb`).
 
 ---
 
-### [x] Task 72: Gerber Export
+### [~] Task 72: Gerber Export
 
-**Goal:** Export board to RS-274X Gerber format for fabrication.
+**As-built:** one RS-274X file with every trace segment and zone outline. It does not yet
+emit pads, vias, solder mask, silkscreen or an NC drill file, so the output is not
+manufacturable as-is. The exporter is wired to File → Export Gerber.
 
-**Files:**
-- `[C] tracecraft/src-tauri/src/io/gerber.rs`:
-  ```rust
-  pub fn export_gerber(board: &PcbBoard, output_dir: &str) -> Result<Vec<String>>;
-  ```
-  - One Gerber file per layer: .GTL (top), .GBL (bottom), .GTS (top solder),
-    .GBS (bottom solder), .GTO (top silkscreen), .GBO (bottom silkscreen), .GKO (outline)
-  - NC drill file (.TXT)
-  - Aperture definitions, flash commands, linear interpolation
-- `[M] tracecraft/src-tauri/src/commands/project.rs` — `export_gerber` command
+**Files:** `src-tauri/src/io/gerber.rs`, `src-tauri/src/commands/project.rs`
 
-**Verification:** Export Gerbers → open in Gerber viewer (e.g., gerbv) → correct layers.
+**Remaining:** per-layer files, pads/vias, aperture macros, solder mask/silk and drill.
 
 ---
 
-### [x] Task 73: IPC-2581 Export
+### [~] Task 73: IPC-2581 Export
 
-**Goal:** Export to IPC-2581 industry standard format.
+**As-built:** hand-written XML with layer stack, net list and trace sections. It is not
+validated against the IPC-2581 schema and does not include full component/padstack data.
 
-**Files:**
-- `[C] tracecraft/src-tauri/src/io/ipc2581.rs`:
-  - XML-based format per IPC-2581 Rev C
-  - Sections: Header, LayerStack, Component, Net, Route, Padstack
-  - Uses `quick-xml` for XML generation
-- `[M] tracecraft/src-tauri/src/commands/project.rs` — `export_ipc2581` command
-
-**Verification:** Export IPC-2581 → validate against schema.
+**Files:** `src-tauri/src/io/ipc2581.rs`
 
 ---
 
-### [x] Task 74: BOM Export
+### [~] Task 74: BOM Export
 
-**Goal:** Generate Bill of Materials in CSV and XLSX formats.
+**As-built:** CSV BOM with `Reference, Value, Component ID, Quantity`, plus a separate CPL
+CSV (`Reference, Mid X, Mid Y, Rotation, Side`). `rust_xlsxwriter` is a dependency, but
+XLSX output is not wired up. Manufacturer/part-number columns are not populated.
 
-**Files:**
-- `[C] tracecraft/src-tauri/src/io/bom.rs`:
-  ```rust
-  pub fn export_bom_csv(board: &PcbBoard, path: &str) -> Result<()>;
-  pub fn export_bom_xlsx(board: &PcbBoard, path: &str) -> Result<()>;
-  ```
-  - Columns: RefDes, Value, Footprint, Manufacturer, Part Number, Quantity
-  - Groups identical components by value + footprint
-- `[M] tracecraft/src-tauri/src/commands/project.rs` — `export_bom` command
-
-**Verification:** Export BOM → open in spreadsheet → correct quantities.
+**Files:** `src-tauri/src/io/bom.rs`
 
 ---
 
-### [x] Task 75: Error Handling & Logging
+### [~] Task 75: Error Handling & Logging
 
-**Goal:** Structured logging and user-facing error messages.
+**As-built:** `tracing_subscriber` initializes with `RUST_LOG`/`tracecraft=debug` and logs
+to the process output; there is no log file or rotation. `commands/errors.rs` defines an
+`AppError`, but most commands still return `String` errors and the frontend displays them
+via store error state/toasts.
 
-**Files:**
-- `[M] tracecraft/src-tauri/src/main.rs` — Add `tracing-subscriber` initialization
-  - Log to file: `~/.tracecraft/logs/app.log`
-  - Log rotation (7 days)
-  - Log levels: info (default), debug (dev mode)
-- `[C] tracecraft/src-tauri/src/commands/errors.rs` — Unified error type:
-  ```rust
-  pub enum AppError {
-      Database(String),
-      NotFound(String),
-      Validation(String),
-      Io(String),
-      Routing(String),
-      AI(String),
-  }
-  impl Into<InvokeError> for AppError { ... }
-  ```
-- `[M] All command files` — Return `AppError` instead of `String`
-- `[M] tracecraft/src/hooks/useTauriCommand.ts` — Display errors as toast notifications
-
-**Verification:** Trigger error → toast notification shows readable message.
+**Files:** `src-tauri/src/lib.rs`, `src-tauri/src/commands/errors.rs`
 
 ---
 
-### [x] Task 76: Final Polish & Performance Optimization
+### [~] Task 76: Final Polish & Performance
 
-**Goal:** Production-quality UX and performance.
+**As-built:** dark copper theme, window sizing, icons and `.deb`/AppImage packaging exist.
+File associations (`.tcproj`), canvas virtualization, systematic memoization, IPC
+throttling and a frame-time budget have not been completed. AppImage packaging and its
+documented fallback command are covered in `docs/IMPLEMENTATION.md`.
 
-**Files:**
-- `[M] tracecraft/src/styles/index.css` — Dark theme support
-- `[M] tracecraft/src-tauri/tauri.conf.json` — App icon, window settings, file associations
-  (.tcproj)
-- `[M] Various canvas components` — Profiling and optimization:
-  - React.memo and useMemo across all renderers
-  - Konva layer batching (batch shape updates)
-  - Throttle IPC calls during drag operations (60fps → 30fps)
-- `[M] tracecraft/src-tauri/src/engine/autorouter.rs` — Performance profiling
-  (grid resolution vs speed trade-offs)
-- `[C] tracecraft/src-tauri/src/commands/viewport.rs` — Smart invalidation:
-  only re-render visible area
+---
 
-**Verification:** App feels responsive; Profiler shows < 16ms frame time.
+## Phase 9: Simulation, Mechanical Export & Smoke-Test Fixes
+
+This phase records work completed after the original 76-task plan.
+
+### [x] Task 77: Pin-Aware Netlist Extraction
+
+Replaced name-based connectivity with pin geometry and union-find connectivity:
+
+- Pin transforms account for symbol rotation/mirror and pin length.
+- Wires connect at endpoints and T-junctions; crossings only connect at junctions.
+- Pin-to-pin nets, labels, GND/power symbols and `ComponentMap` resolution.
+- Backend tests cover series, parallel, junction and label nets.
+
+**Files:** `src-tauri/src/engine/netlist.rs`, `src-tauri/tests/simulation.rs`
+
+---
+
+### [x] Task 78: SPICE Netlist Generation
+
+- Device classification: R, C, L, D, LED, NPN, PNP, VCC, GND.
+- Node sanitization, refdes hygiene, value/unit normalization (`100nF` → `100n`).
+- Model lines, analysis validation and warnings for unsupported parts.
+- `.option filetype=ascii` is emitted so ngspice produces a parseable rawfile.
+- Safe defaults: 5 V, 1 kΩ, 100 nF when parameters are missing.
+
+**Files:** `src-tauri/src/io/spice.rs`, `src-tauri/src/commands/project.rs`
+
+---
+
+### [x] Task 79: ngspice Runner and Simulation Panel
+
+- `simulate_schematic` runs the open schematic without a netlist path round-trip.
+- ngspice output is parsed from the ASCII rawfile into plots/vectors/points.
+- Sidebar Sim tab: transient/AC/DC/operating-point presets, editable directive, Run,
+  `.cir` export, SVG plot and generated-netlist view.
+- Requires `ngspice` on `PATH`; it is not bundled.
+
+**Files:** `src/components/schematic/SimulationPanel.tsx`,
+`src-tauri/src/commands/project.rs`, `src-tauri/tests/simulation.rs`
+
+**Verified:** packaged `.deb`, 108-point transient run with 4 vectors and a rendered plot.
+
+---
+
+### [x] Task 80: AP203 STEP Export
+
+- Generates `MANIFOLD_SOLID_BREP` with `ADVANCED_FACE`, `EDGE_LOOP`,
+  `ORIENTED_EDGE`, `EDGE_CURVE` and `LINE` entities.
+- Board, trace segments, vias and extruded component footprint outlines.
+- Validated with OCCT on the final smoke board: 9 closed solids, 62 faces,
+  13,452.41 mm³, no read errors.
+- Board cutouts are **not** exported yet; copper is represented as simple prisms.
+
+**Files:** `src-tauri/src/io/step.rs`, `src-tauri/src/commands/pcb.rs`
+
+---
+
+### [x] Task 81: GLTF/GLB Model Loading
+
+- Real `gltf` 0.14 parser for `.gltf` and `.glb`, including external `.bin` buffers,
+  embedded GLB chunks, accessors/indices and node transforms.
+- STL (ASCII/binary) and OBJ loaders retained.
+- Tests cover ASCII STL, external-buffer GLTF and indexed GLB.
+
+**Files:** `src-tauri/src/commands/pcb.rs`, `src-tauri/tests/model3d.rs`
+
+---
+
+### [x] Task 82: Smoke-Test Fixes (Packaged .deb and AppImage)
+
+Verified with WebDriver against the installed `.deb` and fixed:
+
+- Coordinates/refdes/value are assigned when placing PCB footprints; schematic refdes are
+  reused when available. Ratsnest now finds footprints (was 0 lines for a wired board).
+- BOM/CPL/KiCad PCB exports now include references and values.
+- Gerber and KiCad PCB exports emit every segment of multi-point traces.
+- Schematic PNG export now receives the Konva stage (previously always failed silently).
+- App version shown in the UI matches `package.json`/`tauri.conf.json` (0.2.0); the About
+  dialog no longer claims full KiCad compatibility.
+- Final smoke test: save → close → reopen preserved 4 footprints, 3 traces, 1 via,
+  4 symbols and 3 wires; simulation returned 108 points / 4 vectors; all eight export
+  commands produced files; STEP validated as 9 solids / 62 faces / 13,452.41 mm³.
+- The schematic canvas exported a valid 2160×1616 PNG. The native save dialog itself is
+  not scriptable on this display, so the dialog-granted fs write was not automated.
+- The 105 MB AppImage launches with `APPIMAGE_EXTRACT_AND_RUN=1` and shows v0.2.0.
+  AppImage bundling takes ~10–12 minutes in the GTK/WebKit deploy step; it is slow, not
+  hung. One build exited with a transient `failed to run linuxdeploy`; rerunning
+  `npx tauri bundle --bundles appimage -v` completed successfully.
+
+---
+
+### [ ] Task 83: Remaining Export & Routing Gaps
+
+- STEP board cutouts and realistic copper/mask geometry.
+- Gerber pads/vias/drill/mask/silkscreen and per-layer files; IPC-2581 schema validation.
+- KiCad schematic library embedding and PCB pads/stackup for true round-trip.
+- Persist auto-router output (currently returns preview paths only) and emit vias at layer
+  transitions.
+- Real pad geometry for DRC/ratsnest instead of footprint origins.
+- XLSX BOM, SVG/PDF schematic export, full UI undo/redo, file associations.

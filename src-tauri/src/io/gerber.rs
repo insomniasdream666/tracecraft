@@ -18,12 +18,13 @@ pub fn export_gerber(board: &PcbBoard, path: &str) -> Result<(), String> {
         out.push_str("%LPD*%\n");
         out.push_str(&format!("D{}*\n", dcode));
         out.push_str(&format!(
-            "X{}Y{}D02*\nX{}Y{}D01*\n",
+            "X{}Y{}D02*\n",
             to_gerber(trace.points[0].x),
             to_gerber(trace.points[0].y),
-            to_gerber(trace.points[1].x),
-            to_gerber(trace.points[1].y),
         ));
+        for pt in trace.points.iter().skip(1) {
+            out.push_str(&format!("X{}Y{}D01*\n", to_gerber(pt.x), to_gerber(pt.y)));
+        }
     }
 
     for (_, zone) in board.zones.iter() {
@@ -57,4 +58,29 @@ pub fn export_gerber(board: &PcbBoard, path: &str) -> Result<(), String> {
 fn to_gerber(val: f64) -> String {
     let v = (val * 1_000_000.0).round() as i64;
     if v >= 0 { format!("{:0>7}", v) } else { format!("{:0>8}", v) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::geometry::Point;
+    use crate::model::id::LayerId;
+
+    #[test]
+    fn emits_every_segment_of_a_trace() {
+        let mut board = PcbBoard::default();
+        board.traces.insert(crate::model::pcb::Trace {
+            net_id: None,
+            layer: LayerId(1),
+            width: 0.25,
+            points: vec![Point::new(0.0, 0.0), Point::new(5.0, 0.0), Point::new(5.0, 5.0)],
+            attenuation_db_per_m: 0.0,
+        });
+        let path = std::env::temp_dir().join("tracecraft-gerber-segments.gbr");
+        export_gerber(&board, path.to_str().unwrap()).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("X5000000Y0000000D01*"), "first segment missing:\n{text}");
+        assert!(text.contains("X5000000Y5000000D01*"), "second segment missing:\n{text}");
+        let _ = std::fs::remove_file(path);
+    }
 }

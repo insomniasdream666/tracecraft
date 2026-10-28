@@ -217,24 +217,25 @@ tracecraft/
 │   │   │   └── si.rs                # Signal integrity: eye diagram, reflection, transmission line
 │   │   ├── io/                      # File format parsers/generators
 │   │   │   ├── mod.rs
-│   │   │   ├── native.rs            # .tcproj: SQLite-backed serialization format
+│   │   │   ├── native.rs            # .tcproj: JSON serialization of project/board/sheets
 │   │   │   ├── kicad_sch.rs         # KiCad 7+ schematic (.kicad_sch) S-expression parser
 │   │   │   ├── kicad_pcb.rs         # KiCad 7+ PCB (.kicad_pcb) S-expression parser
 │   │   │   ├── gerber.rs            # RS-274X Gerber export
 │   │   │   ├── ipc2581.rs           # IPC-2581 XML export
-│   │   │   ├── bom.rs               # BOM CSV/XLSX export
+│   │   │   ├── bom.rs               # BOM and CPL CSV export
 │   │   │   ├── spice.rs             # SPICE netlist export (.cir)
+│   │   │   ├── step.rs              # AP203 STEP writer (MANIFOLD_SOLID_BREP)
 │   │   │   └── library_import.rs    # KiCad library import (.kicad_sym, .pretty)
 │   │   ├── db/                      # Database layer (SQLite)
 │   │   │   ├── mod.rs
 │   │   │   ├── migrations.rs        # Schema versions 1..N, run on app startup
 │   │   │   ├── library_repo.rs      # SqliteComponentRepository implementation
-│   │   │   └── project_store.rs     # Save/load project state to SQLite
-│   │   ├── ai/                      # AI inference
+│   │   │   └── project_store.rs     # Project metadata and last-project path in SQLite
+│   │   ├── ai/                      # Local heuristics (no ONNX/LLM enabled)
 │   │   │   ├── mod.rs
-│   │   │   ├── recommender.rs       # ONNX Runtime: embed netlist → rank components
-│   │   │   ├── routing_assist.rs    # ONNX Runtime: trace path prediction
-│   │   │   └── chat.rs             # llama.cpp bindings for PCB design Q&A
+│   │   │   ├── recommender.rs       # Keyword-based component recommendations
+│   │   │   ├── routing_assist.rs    # Heuristic direct-path route suggestions
+│   │   │   └── chat.rs              # Template-based PCB design Q&A
 │   │   ├── undo/                    # Command pattern undo/redo
 │   │   │   ├── mod.rs
 │   │   │   └── command.rs           # Command trait, CommandHistory, concrete commands
@@ -277,7 +278,7 @@ tracecraft/
 │   │   │   └── StackupVisualizer.tsx# Visual layer stack editor with KiCad import
 │   │   ├── preview/
 │   │   │   ├── Preview3D.tsx        # Three.js canvas for 3D board preview
-│   │   │   └── ModelLoader.tsx      # Loads .step/.wrl → Three.js mesh
+│   │   │   └── ModelLoader.tsx      # Loads STL/OBJ/GLTF/GLB → Three.js mesh
 │   │   ├── library/
 │   │   │   ├── LibraryBrowser.tsx   # Searchable component grid/list
 │   │   │   ├── ComponentDetail.tsx  # Detailed view of a component (symbol + footprint)
@@ -339,7 +340,7 @@ tracecraft/
 | `tauri` | 2.x | Desktop shell, IPC, file dialogs |
 | `serde` | 1.x (with derive) | Serialization for IPC and file formats |
 | `serde_json` | 1.x | JSON handling (IPC, IPC-2581) |
-| `rusqlite` | 0.31 | SQLite for component library and project store |
+| `rusqlite` | 0.31 | SQLite for the component library, app settings and last-project path |
 | `uuid` | 1.x | Unique IDs for components, projects |
 | `chrono` | 0.4 | Timestamps for project metadata |
 | `thiserror` | 1.x | Ergonomic error types |
@@ -347,14 +348,17 @@ tracecraft/
 | `tracing-subscriber` | 0.3 | Log output |
 | `quick-xml` | 0.31 | IPC-2581 XML generation |
 | `csv` | 1.3 | BOM CSV export |
-| `rust_xlsxwriter` | 0.64 | BOM XLSX export |
-| `ort` | 2.x | ONNX Runtime bindings for AI inference |
-| `llama-cpp-2` | 0.1 | llama.cpp bindings for local LLM |
-| `image` | 0.25 | Thumbnail generation for library |
+| `rust_xlsxwriter` | 0.64 | Declared but not wired up; BOM export is CSV only |
 | `parking_lot` | 0.12 | Faster Mutex/RwLock for app state |
+| `async-trait` | 0.1 | Async component repository trait |
+| `ureq` + `zip` | 3 / 2 | KiCad library download and archive extraction |
 | `regex` | 1.10 | KiCad stackup parsing |
 | `fastrand` | 2.0 | Random numbers for eye diagrams |
 | `gltf` | 0.14 | GLTF/GLB 3D model parsing |
+
+AI inference crates (`ort`, `llama-cpp-2`, `reqwest`) are **not enabled**. The AI commands
+use keyword/template heuristics. `ngspice` is an external runtime dependency and must be
+installed on `PATH` for circuit simulation; it is not bundled by the installer.
 
 ### Frontend (package.json)
 
@@ -381,147 +385,144 @@ tracecraft/
 
 ### IPC Command Catalog
 
-All IPC commands follow the pattern:
-```
-invoke("command_name", { arg1, arg2 }) → Promise<Result>
-```
+Representative catalog. `src-tauri/src/lib.rs` is the authoritative list of registered
+commands; argument names are the camelCase equivalents of the Rust parameter names.
 
 ```
-── Project Commands ──
-create_project(name, template?)       → ProjectSummary
-open_project(path)                    → ProjectSummary
-save_project()                        → void
-close_project()                       → void
-get_recent_projects()                 → RecentProject[]
+── Project ──
+create_project(name)                              → ProjectSummary
+open_project(path)                                → ProjectSummary
+save_project(path)                                → void
+close_project()                                   → void
+get_last_project()                                → string | null
+import_kicad_schematic(path) / import_kicad_pcb(path) → void
+export_kicad_schematic(path) / export_kicad_pcb(path) → void
+export_gerber(path) / export_ipc2581(path)        → void
+export_bom(path) / export_cpl(path)               → void
+export_spice_netlist(path)                        → void
 
-── Schematic Commands ──
-get_schematic(project_id, sheet_id?)  → SchematicSheet
-place_symbol(sheet_id, lib_id, pos)   → SymbolId
-draw_wire(sheet_id, from, to)         → WireId
-delete_element(sheet_id, element_id)  → void
-annotate_schematic(sheet_id)          → void
-run_erc(sheet_id)                     → ERCResult[]
+── Schematic ──
+get_schematic(sheet_id?)                          → SchematicSheet (first sheet if omitted)
+place_symbol(sheet_id, component_id, position)    → SymbolId (async; auto refdes/value)
+draw_wire(sheet_id, points, width?)               → WireId
+delete_element(sheet_id, element_type, element_id) → void
+add_net_label(sheet_id, name, position)           → NetLabelId
+add_junction(sheet_id, position)                  → JunctionId
+run_erc_command()                                 → ERCViolation[]
+annotate_schematic(sheet_id)                      → void
+create_bus(sheet_id, name, members)               → BusId
+create_hierarchical_sheet(sheet_id, name, position) → SheetId
+move_elements(...)                                → void
+undo_schematic() / redo_schematic()               → void
 
-── PCB Commands ──
-get_board_state(project_id)           → PcbBoard
-place_footprint(project_id, fp_id, pos, rot) → FootprintId
-route_trace(project_id, net_id, points) → TraceId
-add_via(project_id, pos, layers)      → ViaId
-draw_polygon(project_id, layer, points) → ZoneId
-set_board_outline(project_id, points) → void
-run_drc(project_id)                   → DRCViolation[]
-synchronize_netlist(project_id)       → NetlistDiff
-get_stackup(project_id)               → LayerStack
-set_stackup(project_id, stackup)      → void
-compute_impedance(target_z, layer, copper_oz) → ImpedanceResult
-apply_length_tuning(trace_idx, seg_idx, extra_len) → void
-route_bus(net_ids, layer, starts, ends, width, spacing) → TraceId[]
-stitch_vias(start, end, net_id, spacing) → ViaId[]
-stitch_via_shield(trace_idx, offset, spacing) → ViaId[]
-analyze_signal_integrity(trace_idx?)  → SiResult[]
-analyze_crosstalk()                   → CrosstalkResult[]
-generate_eye_diagram(trace_idx, bit_rate) → EyeDiagramResult
-simulate_reflections(trace_idx, params) → ReflectionResult
-analyze_transmission_line(trace_idx, max_freq) → TransmissionLineResult
-add_flex_zone(name, region, bend_r, bends) → void
-list_flex_zones()                     → FlexZone[]
-delete_flex_zone(index)               → void
-export_step(path)                     → void
+── PCB ──
+get_board_state()                                 → PcbBoard
+get_board_properties() / set_board_size(width, height) → ...
+place_footprint(component_id, position, rotation) → FootprintId (async; refdes/value)
+route_trace(net_id?, layer, width, points)        → TraceId
+add_via(position, diameter, drill)                → ViaId
+set_board_outline(shape, cutouts)                 → void
+sync_netlist()                                    → void (async)
+sync_pcb_to_schematic()                           → void
+get_ratsnest()                                    → RatsnestLine[]
+draw_zone(...) / delete_pcb_element(...)          → ...
+get_3d_model_data(path)                           → Model3DData (STL/OBJ/GLTF/GLB)
+export_step(path)                                 → void
+get_stackup() / set_stackup(stackup)              → LayerStack
+compute_impedance(...) / apply_length_tuning(...) → ...
+route_bus(...) / stitch_vias(...) / stitch_via_shield(...) → ...
+create_diff_pair(...) / list_diff_pairs() / delete_diff_pair(...) / route_diff_pair(...) → ...
+analyze_signal_integrity(...) / analyze_crosstalk() → ...
+generate_eye_diagram(...) / simulate_reflections(...) / analyze_transmission_line(...) → ...
+add_flex_zone(...) / list_flex_zones() / delete_flex_zone(index) → ...
+undo_pcb() / redo_pcb()                           → void
 
-── Auto-Routing Commands ──
-autoroute_net(project_id, net_id, strategy?) → RouteResult
-autoroute_all(project_id, strategy?)  → RouteResult[]
-fanout_component(project_id, fp_id)   → RouteResult
+── Auto-Routing ──
+autoroute_net(request)                            → RouteResponse (preview only)
+autoroute_all()                                   → RouteResponse[] (emits routing-progress/routing-done)
+cancel_routing()                                  → void
+fanout_component(fp_id)                           → RouteResponse
 
-── Library Commands ──
-search_components(query)              → ComponentSummary[]
-get_component_detail(id)              → Component
-create_component(component)           → ComponentId
-import_kicad_library(path)            → ImportResult
-export_component(id, format)          → void
-import_stackup_file()                 → String (file path)
-parse_kicad_stackup(path)             → LayerStack
+── Library ──
+search_components(query)                          → ComponentSummary[]
+get_component_detail(id)                          → Component | null
+create_component(...) / delete_component(id)      → ...
+get_categories() / get_components_model_3d(...)   → ...
+import_library_file(path)                         → ...
+save_symbol_def(...) / save_footprint_def(...)    → ...
+get_footprint_defs(...)                           → ...
+import_stackup_file() / parse_kicad_stackup(path) → ...
+download_kicad_libraries()                        → progress events
 
-── AI Commands ──
-recommend_components(netlist_context) → AIRecommendation[]
-suggest_route(board_state, cursor_pos, net_id) → RouteSuggestion[]
-ai_chat(message, context)             → AsyncIterator<ChatChunk> (via events)
+── DRC ──
+run_drc()                                         → DRCViolation[]
+get_drc_settings() / update_drc_settings(rules)   → ...
 
-── Simulation Commands ──
-export_spice_netlist(path)            → void
-run_spice_simulation(netlist_path, analysis_type) → String (raw output)
+── Simulation ──
+simulate_schematic(analysis?)                     → SpiceSimResult (plots, stdout, netlist)
+run_spice_simulation(netlist_path)                → SpiceSimResult
+export_spice_netlist(path)                        → void
 
-── DRC Commands ──
-run_drc(project_id)                   → DRCViolation[]
-run_drc_region(project_id, bbox)      → DRCViolation[]
-get_drc_settings(project_id)          → DRCSettings
-update_drc_settings(project_id, settings) → void
+── AI (heuristic) ──
+ai_chat(message)                                  → string
+recommend_components(context)                     → string[]
+suggest_route(net_id?, from_x, from_y, to_x, to_y) → number[][]
+
+── Viewport ──
+get_board_bounds() / get_schematic_bounds(...)    → Rect
 ```
 
 ### Data Flow: User Places a Footprint
 
 ```
-User drags component from library to PCB canvas
+User drops a library component on the PCB canvas
     │
     ▼
-React: PCBStore sets drag ghost position
-    │
-    ▼ (on drop)
-React: invoke("place_footprint", { projectId, fpId, pos, rot })
+React: invoke("place_footprint", { componentId, position, rotation })
     │
     ▼
-Rust: Tauri command handler receives request
+Rust (async): load the component from the library repository
+    ├─ look for a schematic refdes for this component not yet placed on the board
+    │   (keeps symbol and footprint linked for ratsnest/DRC/export)
+    ├─ otherwise generate the next prefix number (R1, C2, U3, ...)
+    ├─ insert FootprintInstance { refdes, value, position, rotation, ... }
+    └─ return FootprintId
     │
     ▼
-Rust: Creates PlaceFootprint command struct
-    │
-    ▼
-Rust: CommandHistory.execute(PlaceFootprint)
-    ├─ allocates FootprintId
-    ├─ inserts into PcbBoard.footprints arena
-    ├─ updates netlist (adds net connections)
-    └─ pushes onto undo stack
-    │
-    ▼
-Rust: Emits "footprint-placed" event with FootprintId
-    │
-    ▼
-React: PCBStore listens, updates local state
-React: RatsnestRenderer re-renders affected nets
-React: FootprintRenderer renders new footprint on canvas
+React: loadBoard()
+    ├─ FootprintRenderer draws pads/outline from the library definition
+    ├─ RatsnestRenderer asks for get_ratsnest() and matches footprints by refdes
+    └─ BOM/CPL/KiCad export now see the assigned reference and value
 ```
+
+Footprints are inserted directly rather than through `CommandHistory`; PCB undo/redo
+covers only operations explicitly pushed onto the history stack.
 
 ### Data Flow: Auto-Route a Net
 
 ```
-User clicks "Auto-Route" on a selected net
+A caller invokes the store action (no toolbar/menu control is wired yet)
     │
     ▼
-React: invoke("autoroute_net", { projectId, netId, strategy: "astar" })
+React: invoke("autoroute_all")  (or autoroute_net with explicit start/end coordinates)
     │
     ▼
-Rust: autorouter.rs builds grid from board state
+Rust: AStarRouter snapshots the board under a read lock
+    ├─ builds an occupancy grid for signal layers
+    ├─ marks pad/trace/via obstacles
+    ├─ A* search with via cost and clearance margin
+    └─ returns RouteResponse { success, traces, path_length }
     │
     ▼
-Rust: A* search with cost heuristics:
-    ├─ prefers same-layer straight traces
-    ├─ penalizes vias (layer changes)
-    ├─ respects user preferred direction per layer
-    └─ avoids existing traces with clearance margin
+Rust: emits routing-progress / routing-done events
     │
     ▼
-Rust: If route found:
-    ├─ Creates Trace commands for each segment
-    ├─ Executes through CommandHistory (undoable)
-    └─ Emits "traces-added" event
-    │
-    ▼
-Rust: If no route found:
-    └─ Returns RouteResult::Failure { reason: "..." }
-    │
-    ▼
-React: Updates traces on canvas or shows error toast
+React store: records progress, reloads the board and reports errors
 ```
+
+The router returns preview paths; persisting them as traces/vias is not wired into
+`autoroute_all` or the UI, and no control calls the store action yet. Use manual routing
+for production geometry, and see `docs/TASKS.md` for the remaining work.
 
 ---
 
@@ -667,7 +668,62 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Error> {
 
 ---
 
+## Build & Packaging
+
+### Development and tests
+
+```bash
+npm install
+npm test                 # Vitest (frontend)
+npm run build            # tsc + Vite production build
+cargo test --manifest-path src-tauri/Cargo.toml
+npm run tauri dev        # desktop app with hot reload
+```
+
+### Release bundles
+
+```bash
+# Both configured targets (.deb and AppImage)
+npx tauri build
+
+# One target only
+npx tauri build --bundles deb
+npx tauri build --bundles appimage
+```
+
+AppImage bundling uses Tauri's cached linuxdeploy and linuxdeploy-plugin-gtk. The first
+build downloads those tools plus the AppImage type-2 runtime; later builds reuse the cache.
+It deploys the full GTK/WebKit/GeoClue runtime into `TraceCraft.AppDir` and then compresses
+it. On this machine the AppImage stage takes roughly 10–12 minutes after the release
+binary is built and needs ~1 GB of free space; it is not hung. Do not interrupt it. On systems
+without FUSE the finished AppImage must be run with `APPIMAGE_EXTRACT_AND_RUN=1`
+(TraceCraft still starts normally).
+
+A transient `failed to run linuxdeploy` exit has been observed on this host after the
+GTK deployment. Rerun the same command with `-v`; a second run completed with the same
+toolchain.
+
+If the bundler stops after populating `src-tauri/target/release/bundle/appimage/TraceCraft.AppDir`
+without producing an `.AppImage`, complete the final step from that directory. The outer
+linuxdeploy step normally creates the root icon symlink; add it if the bundler stopped
+before that:
+
+```bash
+cd src-tauri/target/release/bundle/appimage
+ln -sfn usr/share/icons/hicolor/30x30/apps/tracecraft.png TraceCraft.AppDir/tracecraft.png
+OUTPUT="$PWD/TraceCraft_0.2.0_amd64.AppImage" ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 \
+  "$HOME/.cache/tauri/linuxdeploy-plugin-appimage.AppImage" --appdir=TraceCraft.AppDir
+APPIMAGE_EXTRACT_AND_RUN=1 ./TraceCraft_0.2.0_amd64.AppImage
+```
+
+Runtime prerequisites: `ngspice` must be installed on `PATH` for simulation; it is not
+bundled. The application itself is local-only and makes no network calls at runtime except
+when the user explicitly downloads KiCad libraries.
+
 ## Development Plan
+
+> This section preserves the original delivery plan. For actual status, see
+> `docs/TASKS.md` and the Known Limitations in `docs/SPECIFICATION.md`.
 
 ### Phase 1: Foundation (Weeks 1-2)
 - Scaffold Tauri + React + Vite + Tailwind project
@@ -703,28 +759,27 @@ pub fn run_migrations(conn: &Connection) -> Result<(), Error> {
 
 ### Phase 5: Auto-Routing (Weeks 13-14)
 - A* grid router
-- Multi-layer support with via insertion
+- Multi-layer A* search with via transitions modeled in the cost function (via persistence is not yet emitted)
 - Fan-out router
 - Batch routing
 - User-configurable routing strategies
 
 ### Phase 6: 3D Preview (Week 15)
 - Three.js board rendering
-- 3D model loading (.step/.wrl → mesh)
+- 3D model loading (STL/OBJ/GLTF/GLB; STEP import is not implemented)
 - Layer visibility control
 - Measurement tools
 
 ### Phase 7: AI Copilot (Weeks 16-18)
-- ONNX Runtime integration
-- Component recommendation model
-- Routing suggestion model
-- llama.cpp chat integration
-- AI panel UI
+- Keyword component recommendations (as-built)
+- Heuristic routing suggestions (as-built)
+- Template-based chat answers (as-built)
+- ONNX Runtime and llama.cpp integration (future; dependencies commented out)
 
 ### Phase 8: File I/O & Polish (Weeks 19-20)
-- Gerber export
-- IPC-2581 export
-- BOM export
-- Native .tcproj format
-- Error handling polish
-- Performance optimization
+- Gerber export (basic copper file)
+- IPC-2581 export (basic XML)
+- BOM/CPL CSV export
+- Native .tcproj format (JSON)
+- Error handling polish (commands still return strings)
+- Performance optimization (partial)

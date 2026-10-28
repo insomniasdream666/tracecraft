@@ -36,6 +36,7 @@ fn test_pcb_place_footprint() {
         rotation: rotation(45.0),
         mirrored: false,
         refdes: String::new(),
+        value: String::new(),
         locked: false,
     });
     assert_eq!(id, 0);
@@ -134,12 +135,12 @@ fn test_pcb_get_ratsnest() {
     board.footprints.insert(tracecraft_lib::model::pcb::FootprintInstance {
         component_id: tracecraft_lib::model::library::ComponentId(uuid::Uuid::new_v4()),
         position: point(0.0, 0.0),
-        rotation: rotation(0.0), mirrored: false, refdes: "R1".into(), locked: false,
+        rotation: rotation(0.0), mirrored: false, refdes: "R1".into(), value: String::new(), locked: false,
     });
     board.footprints.insert(tracecraft_lib::model::pcb::FootprintInstance {
         component_id: tracecraft_lib::model::library::ComponentId(uuid::Uuid::new_v4()),
         position: point(100.0, 100.0),
-        rotation: rotation(0.0), mirrored: false, refdes: "R2".into(), locked: false,
+        rotation: rotation(0.0), mirrored: false, refdes: "R2".into(), value: String::new(), locked: false,
     });
     board.netlist = tracecraft_lib::model::netlist::Netlist {
         nets: vec![tracecraft_lib::model::netlist::Net {
@@ -235,7 +236,7 @@ fn test_schematic_delete_restores_arena_slot() {
         position: point(0.0, 0.0), rotation: rotation(0.0),
         mirrored: false, refdes: String::new(), value: String::new(),
     });
-    let id2 = sheet.symbols.insert(tracecraft_lib::model::schematic::SymbolInstance {
+    let _id2 = sheet.symbols.insert(tracecraft_lib::model::schematic::SymbolInstance {
         component_id: tracecraft_lib::model::library::ComponentId(uuid::Uuid::new_v4()),
         position: point(100.0, 100.0), rotation: rotation(0.0),
         mirrored: false, refdes: String::new(), value: String::new(),
@@ -495,12 +496,12 @@ fn test_routing_autoroute_net() {
     board.footprints.insert(tracecraft_lib::model::pcb::FootprintInstance {
         component_id: tracecraft_lib::model::library::ComponentId(uuid::Uuid::new_v4()),
         position: point(100.0, 100.0),
-        rotation: rotation(0.0), mirrored: false, refdes: "R1".into(), locked: false,
+        rotation: rotation(0.0), mirrored: false, refdes: "R1".into(), value: String::new(), locked: false,
     });
     board.footprints.insert(tracecraft_lib::model::pcb::FootprintInstance {
         component_id: tracecraft_lib::model::library::ComponentId(uuid::Uuid::new_v4()),
         position: point(115.0, 100.0),
-        rotation: rotation(0.0), mirrored: false, refdes: "R2".into(), locked: false,
+        rotation: rotation(0.0), mirrored: false, refdes: "R2".into(), value: String::new(), locked: false,
     });
     // Set netlist so both are on the same net
     board.netlist = tracecraft_lib::model::netlist::Netlist {
@@ -731,12 +732,12 @@ fn test_get_board_bounds_with_footprints() {
     board.footprints.insert(tracecraft_lib::model::pcb::FootprintInstance {
         component_id: tracecraft_lib::model::library::ComponentId(uuid::Uuid::new_v4()),
         position: point(10.0, 20.0),
-        rotation: rotation(0.0), mirrored: false, refdes: "U1".into(), locked: false,
+        rotation: rotation(0.0), mirrored: false, refdes: "U1".into(), value: String::new(), locked: false,
     });
     board.footprints.insert(tracecraft_lib::model::pcb::FootprintInstance {
         component_id: tracecraft_lib::model::library::ComponentId(uuid::Uuid::new_v4()),
         position: point(100.0, 80.0),
-        rotation: rotation(0.0), mirrored: false, refdes: "U2".into(), locked: false,
+        rotation: rotation(0.0), mirrored: false, refdes: "U2".into(), value: String::new(), locked: false,
     });
 
     let points: Vec<tracecraft_lib::model::geometry::Point> = board.footprints.iter()
@@ -858,6 +859,7 @@ fn test_edge_zero_size_footprint() {
         rotation: rotation(0.0),
         mirrored: false,
         refdes: String::new(),
+        value: String::new(),
         locked: false,
     });
     let fp = board.footprints.get(id).unwrap();
@@ -901,6 +903,7 @@ fn test_edge_large_coordinates() {
         rotation: rotation(45.0),
         mirrored: false,
         refdes: "R1".into(),
+        value: String::new(),
         locked: false,
     });
     let fp = board.footprints.get(id).unwrap();

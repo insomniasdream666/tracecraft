@@ -69,6 +69,7 @@ impl Command for PlaceFootprint {
             rotation: self.rotation,
             mirrored: false,
             refdes: String::new(),
+            value: String::new(),
             locked: false,
         });
         self.result_id = Some(FootprintId(id));

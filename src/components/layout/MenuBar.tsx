@@ -126,7 +126,14 @@ export function MenuBar() {
           label: "Export Image (Schematic)",
           onClick: async () => {
             const path = await saveDialog({ filters: [{ name: "PNG Image", extensions: ["png"] }] });
-            if (path) { await exportSchematicImage(path); toast.success("Image exported"); setActiveMenu(null); }
+            if (!path) return;
+            try {
+              await exportSchematicImage(path);
+              toast.success("Image exported");
+            } catch (e) {
+              toast.error(String(e));
+            }
+            setActiveMenu(null);
           },
           disabled: !current,
         },

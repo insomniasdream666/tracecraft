@@ -13,21 +13,39 @@ pub fn get_schematic(state: State<AppState>, _sheet_id: Option<SheetId>) -> Resu
 }
 
 #[tauri::command]
-pub fn place_symbol(
-    state: State<AppState>,
+pub async fn place_symbol(
+    state: State<'_, AppState>,
     sheet_id: SheetId,
     component_id: crate::model::library::ComponentId,
     position: Point,
 ) -> Result<SymbolId, String> {
+    let component = state
+        .library
+        .get_by_id(component_id)
+        .await?
+        .ok_or_else(|| "Component not found in library".to_string())?;
+
     let mut schematics = state.schematics.write();
     let sheet = schematics.get_mut(&sheet_id).ok_or("Sheet not found")?;
+
+    let prefix = prefix_for(&component.name);
+    let mut next = 0usize;
+    for (_, existing) in sheet.symbols.iter() {
+        if let Some(suffix) = existing.refdes.strip_prefix(prefix) {
+            if let Ok(n) = suffix.parse::<usize>() {
+                next = next.max(n);
+            }
+        }
+    }
+    let refdes = format!("{}{}", prefix, next + 1);
+
     let sym = SymbolInstance {
         component_id,
         position,
         rotation: Rotation(0.0),
         mirrored: false,
-        refdes: String::new(),
-        value: String::new(),
+        refdes,
+        value: component.name.clone(),
     };
     let id = SymbolId(sheet.symbols.insert(sym));
     Ok(id)
@@ -105,6 +123,28 @@ pub fn run_erc_command(state: State<AppState>) -> Result<Vec<ERCViolation>, Stri
     Ok(violations)
 }
 
+/// Refdes prefix for a component name, following common EDA conventions.
+pub(crate) fn prefix_for(name: &str) -> &'static str {
+    let lower = name.to_lowercase();
+    if lower.contains("gnd") || lower.contains("ground") || lower.contains("vcc") || lower.contains("vdd") {
+        "PWR"
+    } else if lower.contains("resistor") || lower.starts_with('r') {
+        "R"
+    } else if lower.contains("capacitor") || lower.starts_with('c') {
+        "C"
+    } else if lower.contains("inductor") || lower.starts_with('l') {
+        "L"
+    } else if lower.contains("led") || lower.contains("diode") || lower.starts_with('d') {
+        "D"
+    } else if lower.contains("transistor") || lower.contains("npn") || lower.contains("pnp") || lower.starts_with('q') {
+        "Q"
+    } else if lower.contains("connector") || lower.starts_with('j') || lower.starts_with('p') {
+        "J"
+    } else {
+        "U"
+    }
+}
+
 #[tauri::command]
 pub fn annotate_schematic(state: State<AppState>, sheet_id: SheetId) -> Result<(), String> {
     let mut schematics = state.schematics.write();
@@ -120,19 +160,6 @@ pub fn annotate_schematic(state: State<AppState>, sheet_id: SheetId) -> Result<(
         let pb = sheet.symbols.get(b).map(|s| s.position).unwrap_or(Point::new(0.0, 0.0));
         (pa.y * 1000.0 + pa.x).partial_cmp(&(pb.y * 1000.0 + pb.x)).unwrap_or(std::cmp::Ordering::Equal)
     });
-
-    // Refdes prefix mapping by component type heuristic
-    fn prefix_for(name: &str) -> &str {
-        let lower = name.to_lowercase();
-        if lower.contains("resistor") || lower.starts_with('r') { "R" }
-        else if lower.contains("capacitor") || lower.starts_with('c') { "C" }
-        else if lower.contains("inductor") || lower.starts_with('l') { "L" }
-        else if lower.contains("diode") || lower.starts_with('d') { "D" }
-        else if lower.contains("transistor") || lower.starts_with('q') { "Q" }
-        else if lower.contains("connector") || lower.starts_with('j') || lower.starts_with('p') { "J" }
-        else if lower.contains("ic") || lower.contains("integrated") || lower.starts_with('u') { "U" }
-        else { "U" }
-    }
 
     for sym_id in symbol_ids {
         if let Some(sym) = sheet.symbols.get_mut(sym_id) {

@@ -14,7 +14,7 @@ interface UIState {
   activeTool: ToolType;
   zoom: number;
   panOffset: Point;
-  sidebarTab: "properties" | "library" | "layers" | "ai" | "si" | "flex" | "impedance" | "tuning" | "bus" | "stitch" | "stackup";
+  sidebarTab: "properties" | "library" | "layers" | "ai" | "si" | "flex" | "impedance" | "tuning" | "bus" | "stitch" | "stackup" | "sim";
   sidebarOpen: boolean;
   setMode: (mode: AppMode) => void;
   setTool: (tool: ToolType) => void;
@@ -22,8 +22,14 @@ interface UIState {
   setPan: (offset: Point) => void;
   setSidebarTab: (tab: UIState["sidebarTab"]) => void;
   toggleSidebar: () => void;
-  canvasApi: { zoomToBounds: (bounds: Rect) => void } | null;
-  setCanvasApi: (api: { zoomToBounds: (bounds: Rect) => void } | null) => void;
+  canvasApi: {
+    zoomToBounds: (bounds: Rect) => void;
+    exportPng: () => string | null;
+  } | null;
+  setCanvasApi: (api: {
+    zoomToBounds: (bounds: Rect) => void;
+    exportPng: () => string | null;
+  } | null) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({

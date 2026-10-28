@@ -6,6 +6,7 @@ import { GRID_SIZE, MIN_ZOOM, MAX_ZOOM } from "../../lib/constants";
 
 export interface KonvaCanvasHandle {
   zoomToBounds: (bounds: Rect) => void;
+  exportPng: () => string | null;
 }
 
 interface KonvaCanvasProps {
@@ -71,13 +72,19 @@ export const KonvaCanvas = forwardRef<KonvaCanvasHandle, KonvaCanvasProps>(funct
     setPan({ x: newX, y: newY });
   }, [width, height, setZoom, setPan]);
 
-  useImperativeHandle(ref, () => ({ zoomToBounds }), [zoomToBounds]);
+  const exportPng = useCallback((): string | null => {
+    const stage = stageRef.current;
+    if (!stage) return null;
+    return stage.toDataURL({ mimeType: "image/png", pixelRatio: 2 });
+  }, []);
+
+  useImperativeHandle(ref, () => ({ zoomToBounds, exportPng }), [zoomToBounds, exportPng]);
 
   useEffect(() => {
     const { setCanvasApi } = useUIStore.getState();
-    setCanvasApi({ zoomToBounds });
+    setCanvasApi({ zoomToBounds, exportPng });
     return () => setCanvasApi(null);
-  }, [zoomToBounds]);
+  }, [zoomToBounds, exportPng]);
 
   const handleWheel = useCallback(
     (e: any) => {

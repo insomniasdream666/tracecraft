@@ -1,5 +1,9 @@
 # TraceCraft — Single-Shot Build Prompt
 
+> **Historical document.** This is the original build prompt, preserved for context. It is
+> not a status report. See `docs/SPECIFICATION.md` and `docs/TASKS.md` for as-built behavior
+> and known limitations. AI inference (ONNX/llama.cpp) was not enabled in the shipped build.
+>
 > Build a local-first, AI-assisted PCB design desktop app called **TraceCraft**.
 > Execute every task in order. Create every file listed. Do not skip steps.
 

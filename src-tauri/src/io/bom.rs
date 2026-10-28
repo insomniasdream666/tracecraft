@@ -4,6 +4,7 @@ use crate::model::pcb::PcbBoard;
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct BomEntry {
     pub reference: String,
+    pub value: String,
     pub component_id: String,
     pub quantity: u32,
 }
@@ -18,16 +19,21 @@ pub struct CplEntry {
 }
 
 pub fn generate_bom(board: &PcbBoard, path: &str) -> Result<(), String> {
-    let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut groups: BTreeMap<String, (String, Vec<String>)> = BTreeMap::new();
     for (_, fp) in board.footprints.iter() {
         let cid = fp.component_id.to_string();
-        groups.entry(cid).or_default().push(fp.refdes.clone());
+        groups
+            .entry(cid)
+            .or_insert_with(|| (fp.value.clone(), Vec::new()))
+            .1
+            .push(fp.refdes.clone());
     }
 
     let mut entries: Vec<BomEntry> = groups
         .into_iter()
-        .map(|(cid, refs)| BomEntry {
+        .map(|(cid, (value, refs))| BomEntry {
             reference: refs.join(", "),
+            value,
             component_id: cid,
             quantity: refs.len() as u32,
         })
@@ -35,10 +41,10 @@ pub fn generate_bom(board: &PcbBoard, path: &str) -> Result<(), String> {
     entries.sort_by(|a, b| natural_sort_key(&a.reference).cmp(&natural_sort_key(&b.reference)));
 
     let mut wtr = csv::Writer::from_path(path).map_err(|e| e.to_string())?;
-    wtr.write_record(["Reference", "Component ID", "Quantity"])
+    wtr.write_record(["Reference", "Value", "Component ID", "Quantity"])
         .map_err(|e| e.to_string())?;
     for e in &entries {
-        wtr.write_record([&e.reference, &e.component_id, &e.quantity.to_string()])
+        wtr.write_record([&e.reference, &e.value, &e.component_id, &e.quantity.to_string()])
             .map_err(|e| e.to_string())?;
     }
     wtr.flush().map_err(|e| e.to_string())?;
@@ -75,4 +81,35 @@ fn natural_sort_key(s: &str) -> String {
         }
     }
     key
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::geometry::Point;
+    use crate::model::id::ComponentId;
+    use crate::model::pcb::FootprintInstance;
+
+    #[test]
+    fn bom_includes_value_and_groups_refs() {
+        let mut board = PcbBoard::default();
+        let cid = ComponentId(uuid::Uuid::new_v4());
+        for (refdes, x) in [("R1", 0.0), ("R2", 10.0)] {
+            board.footprints.insert(FootprintInstance {
+                component_id: cid,
+                position: Point::new(x, 0.0),
+                rotation: crate::model::geometry::Rotation(0.0),
+                mirrored: false,
+                refdes: refdes.to_string(),
+                value: "10k".to_string(),
+                locked: false,
+            });
+        }
+        let path = std::env::temp_dir().join("tracecraft-bom-values.csv");
+        generate_bom(&board, path.to_str().unwrap()).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("Reference,Value,Component ID,Quantity"));
+        assert!(text.contains("\"R1, R2\",10k"));
+        let _ = std::fs::remove_file(path);
+    }
 }

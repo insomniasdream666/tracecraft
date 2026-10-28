@@ -68,6 +68,7 @@ pub fn import_kicad_pcb(path: &str) -> Result<PcbBoard, String> {
             rotation: Rotation(0.0),
             mirrored: false,
             refdes,
+            value: String::new(),
             locked: false,
         });
     }
@@ -224,27 +225,68 @@ pub fn export_kicad_pcb(board: &PcbBoard, path: &str) -> Result<(), String> {
     }
 
     for (_, trace) in board.traces.iter() {
-        if trace.points.len() >= 2 {
-            let layer_name = match trace.layer.0 {
-                2 => "B.Cu",
-                _ => "F.Cu",
-            };
-            out.push_str(&format!("  (segment (start {} {}) (end {} {}) (width {}) (layer {}))\n",
-                trace.points[0].x, trace.points[0].y,
-                trace.points[1].x, trace.points[1].y,
-                trace.width, layer_name));
+        let layer_name = match trace.layer.0 {
+            2 => "B.Cu",
+            _ => "F.Cu",
+        };
+        for segment in trace.points.windows(2) {
+            out.push_str(&format!(
+                "  (segment (start {} {}) (end {} {}) (width {}) (layer {}))\n",
+                segment[0].x, segment[0].y,
+                segment[1].x, segment[1].y,
+                trace.width, layer_name
+            ));
         }
     }
 
     for (_, fp) in board.footprints.iter() {
         out.push_str(&format!("  (footprint {} (layer F.Cu) (at {} {} 0)\n",
             kicad_sch::escape_sexpr(&fp.refdes), fp.position.x, fp.position.y));
-        out.push_str(&format!("    (property \"Reference\" {}) (property \"Value\" \"\")\n",
-            kicad_sch::escape_sexpr(&fp.refdes)));
+        out.push_str(&format!(
+            "    (property \"Reference\" {}) (property \"Value\" {})\n",
+            kicad_sch::escape_sexpr(&fp.refdes),
+            kicad_sch::escape_sexpr(&fp.value)
+        ));
         out.push_str("  )\n");
     }
 
     out.push_str(")\n");
     std::fs::write(path, out).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::geometry::{Point, Rotation};
+    use crate::model::id::{ComponentId, LayerId};
+    use crate::model::pcb::FootprintInstance;
+
+    #[test]
+    fn exports_every_segment_and_footprint_value() {
+        let mut board = PcbBoard::default();
+        board.traces.insert(crate::model::pcb::Trace {
+            net_id: None,
+            layer: LayerId(1),
+            width: 0.25,
+            points: vec![Point::new(0.0, 0.0), Point::new(5.0, 0.0), Point::new(5.0, 5.0)],
+            attenuation_db_per_m: 0.0,
+        });
+        board.footprints.insert(FootprintInstance {
+            component_id: ComponentId(uuid::Uuid::new_v4()),
+            position: Point::new(2.0, 2.0),
+            rotation: Rotation(0.0),
+            mirrored: false,
+            refdes: "R1".to_string(),
+            value: "10k".to_string(),
+            locked: false,
+        });
+        let path = std::env::temp_dir().join("tracecraft-kicad-export.kicad_pcb");
+        export_kicad_pcb(&board, path.to_str().unwrap()).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("(segment (start 0 0) (end 5 0)"));
+        assert!(text.contains("(segment (start 5 0) (end 5 5)"));
+        assert!(text.contains("(property \"Value\" 10k)"));
+        let _ = std::fs::remove_file(path);
+    }
 }

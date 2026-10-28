@@ -1,18 +1,18 @@
 use tauri::State;
 use serde::Serialize;
 use crate::app_state::AppState;
-use crate::engine::netlist::extract_netlist;
+use crate::engine::netlist::extract_netlist_with_components;
 use crate::engine::ratsnest::{compute_ratsnest, RatsnestLine};
 use crate::model::id::*;
 use crate::model::geometry::*;
 use crate::model::pcb::*;
 use crate::model::schematic::NetLabel;
 use crate::model::library::ComponentId;
-use crate::undo::command::*;
 use crate::engine::impedance;
 use crate::engine::tuning;
 use crate::engine::stitching;
 use crate::engine::si::{self, SiResult, CrosstalkResult, EyeDiagramResult, ReflectionResult, TransmissionLineResult};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Model3DData {
@@ -59,16 +59,230 @@ pub fn get_3d_model_data(path: String) -> Result<Model3DData, String> {
     match ext.as_str() {
         "stl" => parse_stl(&data),
         "obj" => parse_obj(&data),
-        "gltf" | "glb" => parse_gltf(&data, &ext),
+        "gltf" | "glb" => parse_gltf(&data, std::path::Path::new(&path)),
         _ => Err(format!("Unsupported 3D model format: .{}", ext)),
     }
 }
 
-fn parse_gltf(_data: &[u8], ext: &str) -> Result<Model3DData, String> {
-    // For now, return an error - GLTF/GLB support requires more complex buffer handling
-    // The gltf crate API requires more complex buffer handling for embedded data
-    // This is a placeholder for future implementation
-    Err(format!("GLTF/GLB format not yet fully supported: .{}", ext))
+fn parse_gltf(data: &[u8], path: &std::path::Path) -> Result<Model3DData, String> {
+    let gltf = gltf::Gltf::from_slice(data)
+        .map_err(|e| format!("Failed to parse glTF/GLB: {}", e))?;
+
+    // Resolve every buffer up front: embedded GLB chunks, external .bin files
+    // referenced by a .gltf, or data URIs we cannot read.
+    let base_dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let mut buffers: Vec<Option<Vec<u8>>> = Vec::new();
+    for buffer in gltf.document.buffers() {
+        let resolved = match buffer.source() {
+            gltf::buffer::Source::Bin => gltf.blob.clone(),
+            gltf::buffer::Source::Uri(uri) => {
+                if uri.starts_with("data:") {
+                    None
+                } else {
+                    let decoded = percent_decode(uri);
+                    std::fs::read(base_dir.join(decoded)).ok()
+                }
+            }
+        };
+        buffers.push(resolved);
+    }
+
+    let mut vertices: Vec<f64> = Vec::new();
+    let mut normals: Vec<f64> = Vec::new();
+    let identity = [
+        [1.0f32, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+
+    let roots: Vec<gltf::Node> = match gltf.document.default_scene() {
+        Some(scene) => scene.nodes().collect(),
+        None => gltf.document.nodes().collect(),
+    };
+    for node in roots {
+        collect_gltf_node(&node, &identity, &buffers, &mut vertices, &mut normals);
+    }
+
+    if vertices.is_empty() {
+        return Err("No triangle geometry found in glTF/GLB file".to_string());
+    }
+
+    if normals.len() != vertices.len() {
+        normals = flat_normals(&vertices);
+    }
+
+    Ok(Model3DData { vertices, normals })
+}
+
+fn collect_gltf_node(
+    node: &gltf::Node<'_>,
+    parent: &[[f32; 4]; 4],
+    buffers: &[Option<Vec<u8>>],
+    vertices: &mut Vec<f64>,
+    normals: &mut Vec<f64>,
+) {
+    let local = node.transform().matrix();
+    let world = mat4_mul(&local, parent);
+
+    if let Some(mesh) = node.mesh() {
+        for primitive in mesh.primitives() {
+            if primitive.mode() != gltf::mesh::Mode::Triangles {
+                continue;
+            }
+            let reader =
+                primitive.reader(|buffer| buffers.get(buffer.index()).and_then(|b| b.as_deref()));
+
+            let Some(position_iter) = reader.read_positions() else {
+                continue;
+            };
+            let positions: Vec<[f64; 3]> = position_iter
+                .map(|p| {
+                    let world_pos = mat4_point(&world, p);
+                    [world_pos[0] as f64, world_pos[1] as f64, world_pos[2] as f64]
+                })
+                .collect();
+
+            let normals_vec: Option<Vec<[f64; 3]>> = reader.read_normals().map(|it| {
+                it.map(|n| {
+                    let world_n = mat4_direction(&world, n);
+                    [world_n[0] as f64, world_n[1] as f64, world_n[2] as f64]
+                })
+                .collect()
+            });
+
+            let indices: Vec<u32> = match reader.read_indices() {
+                Some(indices) => indices.into_u32().collect(),
+                None => (0..positions.len() as u32).collect(),
+            };
+
+            for triangle in indices.chunks(3) {
+                if triangle.len() < 3 {
+                    continue;
+                }
+                let mut corners = [[0.0f64; 3]; 3];
+                let mut corner_normals = [[0.0f64; 3]; 3];
+                let mut have_normals = true;
+                for (slot, index) in triangle.iter().enumerate() {
+                    let index = *index as usize;
+                    if index >= positions.len() {
+                        have_normals = false;
+                        continue;
+                    }
+                    corners[slot] = positions[index];
+                    match &normals_vec {
+                        Some(ns) if index < ns.len() => corner_normals[slot] = ns[index],
+                        _ => have_normals = false,
+                    }
+                }
+
+                if !have_normals {
+                    let n = triangle_normal(&corners[0], &corners[1], &corners[2]);
+                    corner_normals = [n, n, n];
+                }
+
+                for slot in 0..3 {
+                    vertices.extend_from_slice(&corners[slot]);
+                    normals.extend_from_slice(&corner_normals[slot]);
+                }
+            }
+        }
+    }
+
+    for child in node.children() {
+        collect_gltf_node(&child, &world, buffers, vertices, normals);
+    }
+}
+
+fn mat4_mul(a: &[[f32; 4]; 4], b: &[[f32; 4]; 4]) -> [[f32; 4]; 4] {
+    // glTF matrices are column-major: m[column][row].
+    let mut out = [[0.0f32; 4]; 4];
+    for col in 0..4 {
+        for row in 0..4 {
+            out[col][row] = (0..4).map(|k| a[k][row] * b[col][k]).sum();
+        }
+    }
+    out
+}
+
+fn mat4_point(m: &[[f32; 4]; 4], p: [f32; 3]) -> [f32; 3] {
+    [
+        m[0][0] * p[0] + m[1][0] * p[1] + m[2][0] * p[2] + m[3][0],
+        m[0][1] * p[0] + m[1][1] * p[1] + m[2][1] * p[2] + m[3][1],
+        m[0][2] * p[0] + m[1][2] * p[1] + m[2][2] * p[2] + m[3][2],
+    ]
+}
+
+fn mat4_direction(m: &[[f32; 4]; 4], v: [f32; 3]) -> [f32; 3] {
+    let x = m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2];
+    let y = m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2];
+    let z = m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2];
+    let len = (x * x + y * y + z * z).sqrt();
+    if len > 1e-12 {
+        [x / len, y / len, z / len]
+    } else {
+        [0.0, 1.0, 0.0]
+    }
+}
+
+fn triangle_normal(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3]) -> [f64; 3] {
+    let ux = b[0] - a[0];
+    let uy = b[1] - a[1];
+    let uz = b[2] - a[2];
+    let vx = c[0] - a[0];
+    let vy = c[1] - a[1];
+    let vz = c[2] - a[2];
+    let nx = uy * vz - uz * vy;
+    let ny = uz * vx - ux * vz;
+    let nz = ux * vy - uy * vx;
+    let len = (nx * nx + ny * ny + nz * nz).sqrt();
+    if len > 1e-12 {
+        [nx / len, ny / len, nz / len]
+    } else {
+        [0.0, 1.0, 0.0]
+    }
+}
+
+fn flat_normals(vertices: &[f64]) -> Vec<f64> {
+    let mut normals = Vec::with_capacity(vertices.len());
+    for chunk in vertices.chunks_exact(9) {
+        let a = [chunk[0], chunk[1], chunk[2]];
+        let b = [chunk[3], chunk[4], chunk[5]];
+        let c = [chunk[6], chunk[7], chunk[8]];
+        let n = triangle_normal(&a, &b, &c);
+        for _ in 0..3 {
+            normals.extend_from_slice(&n);
+        }
+    }
+    normals
+}
+
+/// Minimal %XX decoder for buffer URIs (spaces, etc.).
+fn percent_decode(uri: &str) -> String {
+    let bytes = uri.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(high), Some(low)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2])) {
+                out.push(high * 16 + low);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
 }
 
 fn parse_stl(data: &[u8]) -> Result<Model3DData, String> {
@@ -259,24 +473,69 @@ pub fn get_board_state(state: State<AppState>) -> Result<PcbBoard, String> {
 }
 
 #[tauri::command]
-pub fn place_footprint(
-    state: State<AppState>,
+pub async fn place_footprint(
+    state: State<'_, AppState>,
     component_id: ComponentId,
     position: Point,
     rotation: Rotation,
 ) -> Result<FootprintId, String> {
+    let component = state
+        .library
+        .get_by_id(component_id)
+        .await?
+        .ok_or_else(|| "Component not found in library".to_string())?;
+
     let mut board = state.board.write();
-    let cmd = PlaceFootprint {
+
+    // Prefer a schematic refdes that has not been placed on the board yet so
+    // footprints and symbols stay linked for ratsnest/DRC/export.
+    let used: std::collections::HashSet<String> = board
+        .footprints
+        .iter()
+        .map(|(_, fp)| fp.refdes.clone())
+        .collect();
+    let mut refdes = None;
+    {
+        let schematics = state.schematics.read();
+        'outer: for (_, sheet) in schematics.iter() {
+            for (_, symbol) in sheet.symbols.iter() {
+                if symbol.component_id == component_id
+                    && !symbol.refdes.is_empty()
+                    && !used.contains(&symbol.refdes)
+                {
+                    refdes = Some(symbol.refdes.clone());
+                    break 'outer;
+                }
+            }
+        }
+    }
+
+    let refdes = match refdes {
+        Some(refdes) => refdes,
+        None => {
+            let prefix = crate::commands::schematic::prefix_for(&component.name);
+            let mut next = 0usize;
+            for (_, fp) in board.footprints.iter() {
+                if let Some(suffix) = fp.refdes.strip_prefix(prefix) {
+                    if let Ok(n) = suffix.parse::<usize>() {
+                        next = next.max(n);
+                    }
+                }
+            }
+            format!("{}{}", prefix, next + 1)
+        }
+    };
+
+    let id = board.footprints.insert(FootprintInstance {
         component_id,
         position,
         rotation,
-        result_id: None,
-    };
-    let mut boxed: Box<dyn Command> = Box::new(cmd);
-    let mut dummy = crate::model::schematic::SchematicSheet::default();
-    boxed.execute(&mut board, &mut dummy)?;
-    let id = FootprintId(board.footprints.len() - 1);
-    Ok(id)
+        mirrored: false,
+        refdes,
+        value: component.name.clone(),
+        locked: false,
+    });
+    Ok(FootprintId(id))
 }
 
 #[tauri::command]
@@ -343,16 +602,19 @@ pub fn set_board_outline(
 }
 
 #[tauri::command]
-pub fn sync_netlist(state: State<AppState>) -> Result<(), String> {
-    let schematics = state.schematics.read();
+pub async fn sync_netlist(state: State<'_, AppState>) -> Result<(), String> {
+    let sheets: Vec<crate::model::schematic::SchematicSheet> = {
+        let schematics = state.schematics.read();
+        schematics.values().cloned().collect()
+    };
     let mut next_id = 0usize;
 
     let mut all_nets = Vec::new();
-    for sheet in schematics.values() {
-        let netlist = extract_netlist(sheet, &mut next_id);
+    for sheet in &sheets {
+        let components = crate::commands::project::collect_components(&state, sheet).await;
+        let netlist = extract_netlist_with_components(sheet, &mut next_id, &components);
         all_nets.extend(netlist.nets);
     }
-    drop(schematics);
 
     let mut board = state.board.write();
     board.netlist = crate::model::netlist::Netlist { nets: all_nets };
@@ -798,147 +1060,21 @@ pub fn draw_zone(
 }
 
 #[tauri::command]
-pub fn export_step(
-    state: State<AppState>,
-    path: String,
-) -> Result<(), String> {
-    let board = state.board.read();
-    let step_content = generate_step_file(&board)?;
-    std::fs::write(&path, step_content)
-        .map_err(|e| format!("Failed to write STEP file: {}", e))?;
-    Ok(())
-}
+pub async fn export_step(state: State<'_, AppState>, path: String) -> Result<(), String> {
+    let board = state.board.read().clone();
 
-fn generate_step_file(board: &PcbBoard) -> Result<String, String> {
-    let mut step = String::new();
-    
-    // STEP file header
-    step.push_str("ISO-10303-21;\n");
-    step.push_str("HEADER;\n");
-    step.push_str("FILE_DESCRIPTION(('TraceCraft PCB'), '2;1');\n");
-    step.push_str("FILE_NAME('pcb.step', '");
-    step.push_str(&chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string());
-    step.push_str("', ('TraceCraft'), (''), 'TraceCraft', 'TraceCraft', '');\n");
-    step.push_str("FILE_SCHEMA(('CONFIG_CONTROL_DESIGN'));\n");
-    step.push_str("ENDSEC;\n");
-    step.push_str("DATA;\n");
-    
-    let mut entity_id = 1;
-    let mut entities = Vec::new();
-    
-    // Get board bounds for scaling
-    let (width, height) = match &board.outline {
-        Some(outline) if !outline.shape.is_empty() && outline.shape[0].len() >= 2 => {
-            let pts = &outline.shape[0];
-            let xs: Vec<f64> = pts.iter().map(|p| p.x).collect();
-            let ys: Vec<f64> = pts.iter().map(|p| p.y).collect();
-            let w = xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max) - xs.iter().cloned().fold(f64::INFINITY, f64::min);
-            let h = ys.iter().cloned().fold(f64::NEG_INFINITY, f64::max) - ys.iter().cloned().fold(f64::INFINITY, f64::min);
-            (w.abs(), h.abs())
+    // Load footprint definitions so component bodies use their real outlines.
+    let mut components: crate::io::step::ComponentMap = HashMap::new();
+    let mut seen = std::collections::HashSet::new();
+    for (_, footprint) in board.footprints.iter() {
+        if !seen.insert(footprint.component_id) {
+            continue;
         }
-        _ => (100.0, 80.0),
-    };
-    
-    // Board substrate as a solid box
-    let substrate_id = entity_id;
-    entity_id += 1;
-    let half_w = width / 2.0;
-    let half_h = height / 2.0;
-    entities.push(format!(
-        "#{} = CARTESIAN_POINT('', ({}, {}, -0.8));",
-        substrate_id, -half_w, -half_h
-    ));
-    entity_id += 1;
-    entities.push(format!(
-        "#{} = CARTESIAN_POINT('', ({}, {}, -0.8));",
-        substrate_id + 1, half_w, -half_h
-    ));
-    entity_id += 1;
-    entities.push(format!(
-        "#{} = CARTESIAN_POINT('', ({}, {}, -0.8));",
-        substrate_id + 2, half_w, half_h
-    ));
-    entity_id += 1;
-    entities.push(format!(
-        "#{} = CARTESIAN_POINT('', ({}, {}, -0.8));",
-        substrate_id + 3, -half_w, half_h
-    ));
-    entity_id += 1;
-    // ... simplified - just create a basic block for the substrate
-    entities.push(format!(
-        "#{} = BLOCK('', #{} , {}, {}, 1.6);",
-        entity_id, substrate_id, width, height
-    ));
-    entity_id += 1;
-    
-    // Traces as thin blocks
-    for (_, trace) in board.traces.iter() {
-        if trace.points.len() < 2 { continue; }
-        for j in 0..trace.points.len() - 1 {
-            let p1 = &trace.points[j];
-            let p2 = &trace.points[j + 1];
-            let dx = p2.x - p1.x;
-            let dy = p2.y - p1.y;
-            let len = (dx * dx + dy * dy).sqrt();
-            if len < 0.01 { continue; }
-            
-            let trace_id = entity_id;
-            entity_id += 1;
-            let cx = (p1.x + p2.x) / 2.0;
-            let cy = (p1.y + p2.y) / 2.0;
-            entities.push(format!(
-                "#{} = CARTESIAN_POINT('', ({}, {}, 0.01));",
-                trace_id, cx - len/2.0, cy - trace.width/2.0
-            ));
-            entity_id += 1;
-            entities.push(format!(
-                "#{} = BLOCK('', #{} , {}, {}, 0.035);",
-                entity_id, trace_id, len, trace.width
-            ));
-            entity_id += 1;
+        if let Ok(Some(component)) = state.library.get_by_id(footprint.component_id).await {
+            components.insert(footprint.component_id, component);
         }
     }
-    
-    // Vias as cylinders (approximated as blocks)
-    for (_, via) in board.vias.iter() {
-        let via_id = entity_id;
-        entity_id += 1;
-        entities.push(format!(
-            "#{} = CARTESIAN_POINT('', ({}, {}, 0.0));",
-            via_id, via.position.x, via.position.y
-        ));
-        entity_id += 1;
-        entities.push(format!(
-            "#{} = BLOCK('', #{} , {}, {}, 1.6);",
-            entity_id, via_id, via.diameter, via.diameter
-        ));
-        entity_id += 1;
-    }
-    
-    // Footprints as blocks
-    for (_, fp) in board.footprints.iter() {
-        let fp_id = entity_id;
-        entity_id += 1;
-        entities.push(format!(
-            "#{} = CARTESIAN_POINT('', ({}, {}, 0.0));",
-            fp_id, fp.position.x, fp.position.y
-        ));
-        entity_id += 1;
-        entities.push(format!(
-            "#{} = BLOCK('', #{} , 8.0, 6.0, 2.0);",
-            entity_id, fp_id
-        ));
-        entity_id += 1;
-    }
-    
-    // Write entities
-    for e in entities {
-        step.push_str(&e);
-        step.push_str(";\n");
-    }
-    
-    step.push_str("ENDSEC;\n");
-    step.push_str("END-ISO-10303-21;\n");
-    
-    Ok(step)
+
+    let step = crate::io::step::generate_step(&board, &components)?;
+    std::fs::write(&path, step).map_err(|e| format!("Failed to write STEP file: {}", e))
 }
