@@ -24,7 +24,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 quick-xml = "0.31"
 csv = "1.3"
-rust_xlsxwriter = "0.64"
+rust_xlsxwriter = "0.96"
 parking_lot = "0.12"
 async-trait = "0.1"
 
